@@ -1,0 +1,12 @@
+# Per-user state and logs written next to the app
+unified-overlay-state.json
+unified-overlay-error.log
+*.log
+*.pid
+runtime/
+
+# Installer build output
+installer/payload.zip
+installer/*.syso
+installer/*.exe
+installer/.stage/
