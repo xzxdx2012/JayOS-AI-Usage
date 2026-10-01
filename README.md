@@ -4,16 +4,16 @@ A notch for Windows that shows how much of your AI limits you have used. It sits
 
 ## Install
 
-1. Download **`JayOS-AI-Usage-Setup-0.0.1-beta.exe`** from [Releases](../../releases).
+1. Download **`JayOS-AI-Usage-Setup-0.0.2-beta.exe`** from [Releases](../../releases).
 2. Double-click it and follow the wizard. You can pick the language (English, 中文, Français, 日本語, 한국어), the install folder, start with Windows and a desktop shortcut.
 
 No admin rights are needed. Everything installs for the current user.
 
-- **Silent install:** `JayOS-AI-Usage-Setup-0.0.1-beta.exe /S` installs with the default options and starts the app.
+- **Silent install:** `JayOS-AI-Usage-Setup-0.0.2-beta.exe /S` installs with the default options and starts the app.
 - **"Windows protected your PC":** the exe is not code-signed yet. Click **More info → Run anyway**.
 - **PowerShell 7:** the app runs on PowerShell. If PowerShell 7 is not installed, setup downloads a portable copy into the install folder. Without internet it falls back to Windows PowerShell 5.1.
 
-Prefer a zip? Download `JayOS-AI-Usage-0.0.1-beta.zip`, unzip it and double-click `Setup.vbs`. To run without installing, double-click `Start-Unified.vbs`.
+Prefer a zip? Download `JayOS-AI-Usage-0.0.2-beta.zip`, unzip it and double-click `Setup.vbs`. To run without installing, double-click `Start-Unified.vbs`.
 
 **Uninstall:** Windows **Settings → Apps → Installed apps → JayOS AI Usage → Uninstall**.
 
@@ -25,7 +25,8 @@ Prefer a zip? Download `JayOS-AI-Usage-0.0.1-beta.zip`, unzip it and double-clic
 - **Pin** (right side of the notch) keeps the notch out.
 - **Click an AI's icon** in the panel to open that app.
 - **Refresh** at the top of the panel updates right away. **Accounts** shows who is signed in and lets you sign in.
-- **Settings** (bottom right): change the theme, background colour and language. The settings menu can be dragged by its title.
+- **Update** (the arrow next to Refresh) checks GitHub for a new version. A green dot means one is ready; click it to install. Your settings stay.
+- **Settings** (bottom right): change the theme, background colour and language. Hover a theme or colour to preview it; the menu stays open while you pick, and closes when you click outside it. The menu can be dragged by its title.
 
 Bar colours: green below 60 %, yellow from 60 %, red from 85 %. At 100 % the panel says the limit is used up.
 

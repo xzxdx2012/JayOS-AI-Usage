@@ -1,4 +1,4 @@
-# CodexData.ps1 - Codex session parsing and usage cost estimation
+﻿# CodexData.ps1 - Codex session parsing and usage cost estimation
 
 function Get-CodexSessionDirCandidates {
     param([string[]]$WslHomeRoots = @(Get-WslHomeRoots))
@@ -538,15 +538,9 @@ function Estimate-CodexCost([string]$model, $v) {
         }
     } else {
         $tier = 'default'
-        # Logged once per model: this runs for every usage record, and logging
-        # each one grew the error log to tens of megabytes.
-        if (-not $script:CodexUnknownModels) { $script:CodexUnknownModels = @{} }
-        if ($model -and -not $script:CodexUnknownModels.ContainsKey($model)) {
-            $script:CodexUnknownModels[$model] = $true
-            if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
-                Write-Log "Unknown Codex model '$model' - falling back to default pricing (verify prices)"
-            }
-        }
+        # Unknown models (new or internal ones such as codex-auto-review) use the
+        # default prices. Not logged: this runs for every record on every refresh,
+        # in a fresh job each time, and filled the error log.
     }
 
     if (-not $script:CodexPrices.ContainsKey($tier)) {

@@ -377,6 +377,15 @@ $script:I18nText = @{
     'Warm gray' = @{ zh = '暖灰'; ja = 'ウォームグレー'; fr = 'Gris chaud'; ko = '따뜻한 회색' }
     'Slate' = @{ zh = '岩灰'; ja = 'スレート'; fr = 'Ardoise'; ko = '슬레이트' }
     'Forest' = @{ zh = '墨绿'; ja = 'フォレスト'; fr = 'Forêt'; ko = '포레스트' }
+    'Navy' = @{ zh = '深蓝'; ja = 'ネイビー'; fr = 'Marine'; ko = '네이비' }
+    'Plum' = @{ zh = '暗紫'; ja = 'プラム'; fr = 'Prune'; ko = '플럼' }
+    'Wine' = @{ zh = '酒红'; ja = 'ワイン'; fr = 'Bordeaux'; ko = '와인' }
+    'Check for updates' = @{ zh = '检查更新'; ja = '更新を確認'; fr = 'Rechercher des mises à jour'; ko = '업데이트 확인' }
+    'Downloading update…' = @{ zh = '正在下载更新…'; ja = '更新をダウンロード中…'; fr = 'Téléchargement de la mise à jour…'; ko = '업데이트 다운로드 중…' }
+    'Checking for updates…' = @{ zh = '正在检查更新…'; ja = '更新を確認中…'; fr = 'Recherche de mises à jour…'; ko = '업데이트 확인 중…' }
+    'Update check failed' = @{ zh = '检查更新失败'; ja = '更新を確認できませんでした'; fr = 'Échec de la vérification'; ko = '업데이트 확인 실패' }
+    'Update download failed' = @{ zh = '更新下载失败'; ja = '更新のダウンロードに失敗'; fr = 'Échec du téléchargement'; ko = '업데이트 다운로드 실패' }
+    'Installing update…' = @{ zh = '正在安装更新…'; ja = '更新をインストール中…'; fr = 'Installation de la mise à jour…'; ko = '업데이트 설치 중…' }
 }
 # Single words inside the two-tone stat values ("456 in / 98.9k out").
 $script:I18nWords = @{
@@ -388,6 +397,8 @@ $script:I18nWords = @{
     'available' = @{ zh = '次可用'; ja = '回利用可'; fr = 'disponible'; ko = '회 사용 가능' }
 }
 $script:I18nRules = @(
+    @{ rx = '^Update to (.+)$'; zh = '更新到 $1'; ja = '$1 に更新'; fr = 'Mettre à jour vers $1'; ko = '$1(으)로 업데이트' },
+    @{ rx = '^Up to date \((.+)\)$'; zh = '已是最新版（$1）'; ja = '最新版です（$1）'; fr = 'À jour ($1)'; ko = '최신 버전 ($1)' },
     @{ rx = '^Live · (.+)$'; zh = '实时 · $1'; ja = 'ライブ · $1'; fr = 'En direct · $1'; ko = '실시간 · $1' },
     @{ rx = '^(\d+)d (\d+)h left$'; zh = '剩 $1 天 $2 小时'; ja = '残り $1日$2時間'; fr = 'reste $1 j $2 h'; ko = '$1일 $2시간 남음' },
     @{ rx = '^(\d+)h (\d+)m left$'; zh = '剩 $1 小时 $2 分'; ja = '残り $1時間$2分'; fr = 'reste $1 h $2 min'; ko = '$1시간 $2분 남음' },
@@ -515,14 +526,22 @@ function Sync-UiLanguageTag {
 # Panel background: a few quiet presets plus any custom colour. The top stays
 # pure black so the notch still melts into the bezel.
 # ---------------------------------------------------------------------------
+# Dark enough for white text, but each with a clear tint so they read apart.
 $script:PanelBgPresets = [ordered]@{
-    'Graphite' = '#17171A'; 'Pure black' = '#060606'; 'Warm gray' = '#1D1B19'; 'Slate' = '#171A1F'; 'Forest' = '#111814'
+    'Graphite' = '#1A1A1E'; 'Pure black' = '#050505'; 'Warm gray' = '#28231E'; 'Slate' = '#1B2330'
+    'Forest' = '#14281D'; 'Navy' = '#121F3A'; 'Plum' = '#261838'; 'Wine' = '#33151C'
 }
+# Earlier, near-identical versions of the same presets map to the new ones.
+$script:PanelBgLegacy = @{ '#17171A' = '#1A1A1E'; '#060606' = '#050505'; '#1D1B19' = '#28231E'; '#171A1F' = '#1B2330'; '#111814' = '#14281D' }
 
 function Get-PanelBgHex {
     $h = if ($script:Cfg) { [string]$script:Cfg['PanelBg'] } else { '' }
-    if ($h -match '^#[0-9A-Fa-f]{6}$') { return $h.ToUpperInvariant() }
-    return '#17171A'
+    if ($h -match '^#[0-9A-Fa-f]{6}$') {
+        $h = $h.ToUpperInvariant()
+        if ($script:PanelBgLegacy.ContainsKey($h)) { return $script:PanelBgLegacy[$h] }
+        return $h
+    }
+    return '#1A1A1E'
 }
 
 function Set-NotchBackdropColor([string]$Hex) {
@@ -560,17 +579,94 @@ function Invoke-CustomPanelBackground {
     Set-PanelBackground ('#{0:X2}{1:X2}{2:X2}' -f [int]$r, [int]$g, [int]$bl)
 }
 
+function New-RoundRectPath([single]$X, [single]$Y, [single]$W, [single]$H, [single]$R) {
+    $p = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $d = $R * 2
+    $p.AddArc($X, $Y, $d, $d, 180, 90)
+    $p.AddArc($X + $W - $d, $Y, $d, $d, 270, 90)
+    $p.AddArc($X + $W - $d, $Y + $H - $d, $d, $d, 0, 90)
+    $p.AddArc($X, $Y + $H - $d, $d, $d, 90, 90)
+    $p.CloseFigure()
+    return $p
+}
+
+# Background colour row: a little tile in that colour (black at the top like the
+# real panel), outlined so even the near-black ones read apart.
 function New-SwatchBitmap([string]$Hex) {
     $px = if ($script:MenuIconPx) { [int]$script:MenuIconPx } else { 18 }
     $bmp = New-Object System.Drawing.Bitmap($px, $px)
     $gr = [System.Drawing.Graphics]::FromImage($bmp)
     $gr.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $fill = New-Object System.Drawing.SolidBrush([System.Drawing.ColorTranslator]::FromHtml($Hex))
-    $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(120, 255, 255, 255), 1.0)
-    $gr.FillEllipse($fill, 1, 1, $px - 3, $px - 3)
-    $gr.DrawEllipse($pen, 1, 1, $px - 3, $px - 3)
-    $fill.Dispose(); $pen.Dispose(); $gr.Dispose()
+    $c = [System.Drawing.ColorTranslator]::FromHtml($Hex)
+    $path = New-RoundRectPath 0.5 0.5 ($px - 1.5) ($px - 1.5) ([single]($px / 4.5))
+    $rect = New-Object System.Drawing.RectangleF(0, 0, $px, $px)
+    # Show the colour a touch brighter than it renders so tints are visible.
+    $lift = [System.Drawing.Color]::FromArgb([math]::Min(255, [int]($c.R * 1.6 + 6)), [math]::Min(255, [int]($c.G * 1.6 + 6)), [math]::Min(255, [int]($c.B * 1.6 + 6)))
+    $fill = New-Object System.Drawing.Drawing2D.LinearGradientBrush($rect, $c, $lift, 90.0)
+    $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(150, 255, 255, 255), 1.0)
+    $gr.FillPath($fill, $path)
+    $gr.DrawPath($pen, $path)
+    $fill.Dispose(); $pen.Dispose(); $path.Dispose(); $gr.Dispose()
     return $bmp
+}
+
+# Theme row: a miniature panel - the theme's background with its three meter
+# colours - so you can see the palette before picking it.
+function New-ThemeSwatchBitmap([string]$Name) {
+    $t = $script:Themes[$Name]
+    $px = if ($script:MenuIconPx) { [int]$script:MenuIconPx } else { 18 }
+    $bmp = New-Object System.Drawing.Bitmap($px, $px)
+    if (-not $t) { return $bmp }
+    $gr = [System.Drawing.Graphics]::FromImage($bmp)
+    $gr.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $path = New-RoundRectPath 0.5 0.5 ($px - 1.5) ($px - 1.5) ([single]($px / 4.5))
+    $bg = New-Object System.Drawing.SolidBrush([System.Drawing.ColorTranslator]::FromHtml([string]$t.BgC1))
+    $gr.FillPath($bg, $path)
+    $cols = @()
+    foreach ($k in 'FivehColors', 'WeekColors', 'FabColors') {
+        $v = @($t[$k])
+        $cols += $(if ($v.Count -gt 1) { [string]$v[1] } elseif ($v.Count -eq 1) { [string]$v[0] } else { '#C7C7CC' })
+    }
+    $barH = [single][math]::Max(2.0, $px / 7.0)
+    $gap = [single](($px - 3 * $barH) / 4.0)
+    $lens = @(0.72, 0.5, 0.86)
+    for ($i = 0; $i -lt 3; $i++) {
+        $b = New-Object System.Drawing.SolidBrush([System.Drawing.ColorTranslator]::FromHtml($cols[$i]))
+        $y = $gap + $i * ($barH + $gap)
+        $w = ($px - 6) * $lens[$i]
+        $bar = New-RoundRectPath 3 $y $w $barH ([single]($barH / 2.0))
+        $gr.FillPath($b, $bar)
+        $b.Dispose(); $bar.Dispose()
+    }
+    $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(150, 255, 255, 255), 1.0)
+    $gr.DrawPath($pen, $path)
+    $bg.Dispose(); $pen.Dispose(); $path.Dispose(); $gr.Dispose()
+    return $bmp
+}
+
+# Hovering a theme previews it on the open panel; leaving the list (or closing
+# the menu) goes back to the saved one. Applied on a short delay so sweeping
+# across the list stays smooth.
+$script:ThemePreviewShown = $null
+$script:ThemePreviewWanted = $null
+$script:ThemePreviewTimer = $null
+function Invoke-ThemePreview([string]$Name) {
+    if (-not $Name) { $Name = [string]$script:Cfg.Theme }
+    $script:ThemePreviewWanted = $Name
+    if (-not $script:ThemePreviewTimer) {
+        $t = New-Object System.Windows.Threading.DispatcherTimer
+        $t.Interval = [TimeSpan]::FromMilliseconds(70)
+        $t.add_Tick({
+            param($s, $e)
+            $s.Stop()
+            $want = [string]$script:ThemePreviewWanted
+            if (-not $want -or $want -eq [string]$script:ThemePreviewShown) { return }
+            try { Apply-UnifiedTheme $want; $script:ThemePreviewShown = $want; Update-AllSections } catch { }
+        })
+        $script:ThemePreviewTimer = $t
+    }
+    $script:ThemePreviewTimer.Stop()
+    $script:ThemePreviewTimer.Start()
 }
 
 function Sync-AppearanceMenus {
@@ -580,13 +676,23 @@ function Sync-AppearanceMenus {
         foreach ($k in @($script:bgItems.Keys)) {
             $it = $script:bgItems[$k]
             if (-not $it.Image) { try { $it.Image = New-SwatchBitmap $k } catch { } }
+            $it.Tag = 'swatch'
             $it.Checked = ($k -eq $hex)
             if ($it.Checked) { $isPreset = $true }
         }
     }
     if ($script:bgCustomItem) {
         $script:bgCustomItem.Checked = -not $isPreset
+        $script:bgCustomItem.Tag = 'swatch-action'
         try { $script:bgCustomItem.Image = New-SwatchBitmap $hex } catch { }
+    }
+    if ($script:themeItems) {
+        foreach ($k in @($script:themeItems.Keys)) {
+            $it = $script:themeItems[$k]
+            if (-not $it.Image -or [string]$it.Tag -ne 'swatch') { try { $it.Image = New-ThemeSwatchBitmap $k } catch { } }
+            $it.Tag = 'swatch'
+            $it.Checked = ($k -eq [string]$script:Cfg.Theme)
+        }
     }
     if ($script:langItems) {
         $lang = Get-UiLanguage
@@ -904,6 +1010,7 @@ function Set-NotchPinned([bool]$Pinned) {
     if (-not $script:Cfg) { return }
     $script:Cfg['NotchPinned'] = $Pinned
     Sync-NotchPinGlyph
+    try { Assert-NotchTopmost -Force } catch { }
     try { Save-UnifiedState } catch { }
     if ($Pinned -and ($script:NotchState -eq 'EDGE' -or $script:NotchState -eq 'EDGE_RETURN' -or $script:NotchState -eq 'HOLD')) {
         Start-NotchHover
@@ -1092,6 +1199,12 @@ function Initialize-IslandView {
         $refreshButton.Add_MouseLeftButtonDown({ param($s, $e) $e.Handled = $true })
         $refreshButton.Add_MouseLeftButtonUp({ param($s, $e) $e.Handled = $true; Start-RefreshSpin; Invoke-ManualRefresh })
     }
+    $updateButton = $w.FindName('chromeUpdate')
+    if ($updateButton) {
+        $updateButton.Add_MouseLeftButtonDown({ param($s, $e) $e.Handled = $true })
+        $updateButton.Add_MouseLeftButtonUp({ param($s, $e) $e.Handled = $true; try { Invoke-UpdateButton } catch { } })
+        try { Sync-UpdateIndicators; Start-UpdateAutoCheck } catch { }
+    }
     try { Set-NotchBackdropColor (Get-PanelBgHex) } catch { }
     try { Set-StatIconColors } catch { }
     try { Sync-UiLanguageTag } catch { }
@@ -1186,7 +1299,10 @@ function Update-PanelChrome {
         $word = $words[$chromeKey]
         $clock = if ($time) { [string]$time.Text } else { '' }
         if ($chromeKey -eq 'ok' -and $clock -match '^\d{1,2}:\d{2}') { $word = 'Live ' + [char]0x00B7 + ' ' + $clock }
-        $stateText.Text = $word
+        # An update message (Update.ps1) holds the spot for a few seconds.
+        $notice = $false
+        try { $notice = Test-UpdateNoticeActive } catch { }
+        if ($notice) { $script:UpdateNoticePrev = $word } else { $stateText.Text = $word }
     }
 
     # Accounts pill: "Sign in" + red dot while an enabled provider needs it.
@@ -1294,6 +1410,36 @@ public static class AIUsageIslandNative {
     $style = [AIUsageIslandNative]::GetWindowLong($hwnd, $gwlExStyle)
     [void][AIUsageIslandNative]::SetWindowLong($hwnd, $gwlExStyle, ($style -bor $wsExNoActivate -bor $wsExToolWindow))
     [void][AIUsageIslandNative]::SetWindowPos($hwnd, [IntPtr](-1), 0, 0, 0, 0, 0x0013)
+}
+
+# Keep the notch above other apps. Windows can drop a window's always-on-top
+# flag (seen after signing in with the notch pinned: any app then covered it
+# until it was unpinned and pinned again). Checked every ~1.5 s from the hover
+# poll, and the window is put back on top a few times after start, when
+# Explorer and other startup apps are still opening their windows.
+$script:TopmostCheckAt = [DateTime]::MinValue
+$script:TopmostKickUntil = [DateTime]::UtcNow.AddSeconds(90)
+function Assert-NotchTopmost([switch]$Force) {
+    if (-not $script:window -or -not $script:window.IsVisible) { return }
+    $now = [DateTime]::UtcNow
+    if (-not $Force -and $now -lt $script:TopmostCheckAt) { return }
+    $script:TopmostCheckAt = $now.AddMilliseconds(1500)
+    if (-not ([System.Management.Automation.PSTypeName]'AIUsageIslandNative').Type) { return }
+    # Never push the overlay over its own open menus.
+    if (Test-NotchMenuOpen) { return }
+    $hwnd = (New-Object System.Windows.Interop.WindowInteropHelper $script:window).Handle
+    if ($hwnd -eq [IntPtr]::Zero) { return }
+    $ex = [AIUsageIslandNative]::GetWindowLong($hwnd, -20)
+    $lost = (($ex -band 0x8) -eq 0)
+    if ($lost -or $Force -or $now -lt $script:TopmostKickUntil) {
+        if ($lost) {
+            $script:window.Topmost = $false
+            $script:window.Topmost = $true
+            try { Write-NotchLog 'always-on-top was lost; restored' } catch { }
+        }
+        # HWND_TOPMOST, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+        [void][AIUsageIslandNative]::SetWindowPos($hwnd, [IntPtr](-1), 0, 0, 0, 0, 0x0013)
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -2133,6 +2279,7 @@ function Invoke-NotchHoverPoll {
     try {
         if (-not $script:window -or -not $script:window.IsVisible) { return }
         if (-not (Test-NotchShell)) { return }
+        Assert-NotchTopmost
         if (Test-NotchMenuOpen) { Close-NotchMenusOnOutsideClick }
         $state = $script:NotchState
         if ($state -eq 'EXPANDED') { Invoke-NotchPanelLeavePoll; return }
@@ -2714,15 +2861,34 @@ public class DarkMenuRenderer : ToolStripProfessionalRenderer {
     }
     // Toggle rows are shown by their switch; their icon draws plainly, without
     // the checked-state box WinForms would put behind it.
+    static bool IsSwatch(ToolStripItem item) {
+        string t = object.ReferenceEquals(item, null) ? null : item.Tag as string;
+        return t != null && t.StartsWith("swatch");
+    }
     protected override void OnRenderItemImage(ToolStripItemImageRenderEventArgs e) {
         if (IsTag(e.Item, "toggle")) {
             if (e.Image != null) e.Graphics.DrawImage(e.Image, e.ImageRectangle);
             return;
         }
+        if (IsSwatch(e.Item)) {
+            // Colour rows: the swatch itself, with a blue ring around the one in use.
+            if (e.Image != null) e.Graphics.DrawImage(e.Image, e.ImageRectangle);
+            var mi = e.Item as ToolStripMenuItem;
+            if (!object.ReferenceEquals(mi, null) && mi.Checked) {
+                var g = e.Graphics;
+                var prev = g.SmoothingMode;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                var r = new RectangleF(e.ImageRectangle.X - 2.5f, e.ImageRectangle.Y - 2.5f, e.ImageRectangle.Width + 4f, e.ImageRectangle.Height + 4f);
+                using (var path = Round(r, 6f))
+                using (var p = new Pen(Color.FromArgb(10, 132, 255), 2f)) g.DrawPath(p, path);
+                g.SmoothingMode = prev;
+            }
+            return;
+        }
         base.OnRenderItemImage(e);
     }
     protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e) {
-        if (IsTag(e.Item, "toggle")) return;
+        if (IsTag(e.Item, "toggle") || IsSwatch(e.Item)) return;
         Graphics g = e.Graphics;
         Rectangle r = e.ImageRectangle;
         if (r.IsEmpty) return;
@@ -3091,7 +3257,9 @@ $miBrand = New-StripItem 'Brand' $null
 [void]$script:ctxStrip.Items.Add($miBrand)
 
 # Version (shown under System)
-$script:DisplayVersion = '0.0.1 beta'
+$script:DisplayVersion = '0.0.2 beta'
+$script:miUpdate = New-StripItem 'Check for updates' { Invoke-UpdateButton }
+[void]$script:ctxStrip.Items.Add($script:miUpdate)
 $miVersion = New-StripItem ("Version {0}" -f $script:DisplayVersion) $null
 $miVersion.Enabled = $false
 [void]$script:ctxStrip.Items.Add($miVersion)
@@ -3280,7 +3448,7 @@ foreach ($pair in @(@('100%',1.0), @('80%',0.8), @('60%',0.6), @('40%',0.4))) {
 $miTheme = New-StripItem 'Theme' $null
 foreach ($tname in $script:Themes.Keys) {
     $tn  = $tname
-    $sub = New-StripItem $tname ([scriptblock]::Create("`$script:Cfg.Theme='$tn'; Apply-UnifiedTheme '$tn'; Save-UnifiedState; foreach(`$x in `$script:themeItems.Values){`$x.Checked=`$false}; `$script:themeItems['$tn'].Checked=`$true"))
+    $sub = New-StripItem $tname ([scriptblock]::Create("`$script:Cfg.Theme='$tn'; if (`$script:ThemePreviewShown -ne '$tn') { Apply-UnifiedTheme '$tn'; try { Update-AllSections } catch { } }; `$script:ThemePreviewShown='$tn'; Save-UnifiedState; foreach(`$x in `$script:themeItems.Values){`$x.Checked=`$false}; `$script:themeItems['$tn'].Checked=`$true"))
     $sub.CheckOnClick = $false
     $sub.Checked = ($tname -eq $script:Cfg.Theme)
     $script:themeItems[$tname] = $sub
@@ -3522,7 +3690,8 @@ Add-Separator
             @('Pin button on notch', 'IcoPin')) },
         @{ Title = 'System'; Icon = 'IcoPower'; Items = @(
             @('Open at login', 'IcoPower', $true), @('Start hidden to tray', 'IcoEyeOff', $true),
-            @('Minimize to tray', 'IcoMinus'), @('Version 0.0.1 beta', 'IcoInfo')) }
+            @('Minimize to tray', 'IcoMinus'), @('Check for updates', 'IcoDownload'),
+            @(("Version {0}" -f $script:DisplayVersion), 'IcoInfo')) }
     )
     $used = @{}
     $script:ctxStrip.Items.Clear()
@@ -3612,6 +3781,43 @@ Add-Separator
     foreach ($k in @($script:MenuToggleKeys.Keys) + @('Open at login')) {
         if ($byText.ContainsKey($k)) { $script:MenuToggleItems[$k] = $byText[$k] }
     }
+
+    # Pick-one rows keep the menu open (see Register-MenuKeepOpen). The view
+    # switch (pinned / drop-down) and dialogs still close it.
+    $skip = @($script:bgCustomItem) + @($script:viewModeItems.Values)
+    function Set-MenuOptionTags($Items) {
+        foreach ($it in @($Items)) {
+            if ($it -isnot [System.Windows.Forms.ToolStripMenuItem]) { continue }
+            if ($it.DropDownItems.Count -gt 0) { Set-MenuOptionTags $it.DropDownItems; continue }
+            if ($null -ne $it.Tag) { continue }
+            $isSkip = $false
+            foreach ($x in $skip) { if ([object]::ReferenceEquals($x, $it)) { $isSkip = $true } }
+            if (-not $isSkip) { $it.Tag = 'option' }
+        }
+    }
+    foreach ($name in @('View', 'Hotkeys', 'Snap to corner', 'Opacity', 'Theme', 'Background', 'Language')) {
+        if ($byText[$name]) { Set-MenuOptionTags $byText[$name].DropDownItems }
+    }
+
+    # Live preview while hovering a colour or theme; leaving the list restores
+    # what is saved (a click saves it).
+    if ($byText['Background']) {
+        foreach ($k in @($script:bgItems.Keys)) {
+            $script:bgItems[$k].add_MouseEnter([scriptblock]::Create("try { Set-NotchBackdropColor '$k' } catch { }"))
+        }
+        $restoreBg = { try { Set-NotchBackdropColor (Get-PanelBgHex) } catch { } }
+        if ($script:bgCustomItem) { $script:bgCustomItem.add_MouseEnter($restoreBg) }
+        $byText['Background'].DropDown.add_MouseLeave($restoreBg)
+        $byText['Background'].DropDown.add_Closed($restoreBg)
+    }
+    if ($byText['Theme']) {
+        foreach ($k in @($script:themeItems.Keys)) {
+            $script:themeItems[$k].add_MouseEnter([scriptblock]::Create("Invoke-ThemePreview '$($k -replace "'", "''")'"))
+        }
+        $byText['Theme'].DropDown.add_MouseLeave({ Invoke-ThemePreview $null })
+        $byText['Theme'].DropDown.add_Closed({ Invoke-ThemePreview $null })
+    }
+    Sync-AppearanceMenus
     Sync-IslandMenuItem
 }
 
@@ -3654,15 +3860,16 @@ function Set-MenuRoundCorners($Strip) {
 }
 Set-MenuRoundCorners $script:ctxStrip
 
-# Flipping a switch (or clicking the title/drag row) keeps the menu open so
-# several settings can be changed in one go; other items close it as usual.
+# Flipping a switch, picking an option (theme, colour, language, opacity...) or
+# clicking the title/drag row keeps the menu open so several settings can be
+# changed in one go; click outside the menu to close it. Actions close it.
 $script:MenuKeepOpenUntil = [DateTime]::MinValue
 function Register-MenuKeepOpen($Strip) {
     if (-not $Strip) { return }
     $Strip.add_ItemClicked({
         param($s, $e)
         $t = [string]$e.ClickedItem.Tag
-        if ($t -eq 'toggle' -or $t -eq 'grip') { $script:MenuKeepOpenUntil = [DateTime]::UtcNow.AddMilliseconds(400) }
+        if ($t -eq 'toggle' -or $t -eq 'grip' -or $t -eq 'option' -or $t -eq 'swatch') { $script:MenuKeepOpenUntil = [DateTime]::UtcNow.AddMilliseconds(400) }
     })
     $Strip.add_Closing({
         param($s, $e)

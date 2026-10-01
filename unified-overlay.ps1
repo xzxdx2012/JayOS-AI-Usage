@@ -1,4 +1,4 @@
-<#
+﻿<#
     Unified AI Usage Overlay
     A single always-on-top HUD showing Claude Code, Codex, Cursor, and Grok usage.
     Right-click the panel for all options.
@@ -389,6 +389,7 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase,
 . (Join-Path $script:AppDir 'src\ProviderPicker.ps1')
 . (Join-Path $script:AppDir 'src\QuakeView.ps1')
 . (Join-Path $script:AppDir 'src\Dropdown.ps1')
+. (Join-Path $script:AppDir 'src\Update.ps1')
 . (Join-Path $script:AppDir 'src\UnifiedTray.ps1')
 
 # ---------------------------------------------------------------------------

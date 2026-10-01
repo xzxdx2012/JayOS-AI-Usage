@@ -116,6 +116,11 @@ func main() {
 	extra := []string{}
 	ps := ""
 	for _, a := range os.Args[1:] {
+		// /D=<folder>: install or update that folder (used by the app's updater).
+		if len(a) > 3 && strings.EqualFold(a[:3], "/d=") {
+			extra = append(extra, "-InstallDir", strings.Trim(a[3:], `"`))
+			continue
+		}
 		switch strings.ToLower(a) {
 		case "/s", "-s", "/silent", "-silent", "--silent":
 			extra = append(extra, "-Silent")

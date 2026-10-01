@@ -11,7 +11,7 @@ $script:WarnPct        = 80
 $script:CritPct        = 95
 $script:WorkdayStartHour = 8
 $script:WorkdayEndHour   = 18
-$script:AppVersion     = '0.0.1'
+$script:AppVersion     = '0.0.2'
 
 # ---------------------------------------------------------------------------
 # Shared provider health vocabulary

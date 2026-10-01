@@ -3,7 +3,7 @@
 # Needs Go 1.21+ and rsrc (go install github.com/akavel/rsrc@latest).
 set -e
 cd "$(dirname "$0")"
-VERSION=${VERSION:-0.0.1-beta}
+VERSION=${VERSION:-0.0.2-beta}
 rm -f payload.zip
 mkdir -p .stage/JayOS-AI-Usage
 (cd .. && for f in unified-overlay.ps1 Start-Unified.vbs Setup.ps1 Setup.vbs Install.bat Uninstall.bat sqlite3.exe LICENSE README.md; do

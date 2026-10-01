@@ -318,15 +318,28 @@ $xaml = @'
             <!-- Written by Update-AllSections (last refresh / culprit); folded into the state text. -->
             <TextBlock x:Name="timeText" Text="" Visibility="Collapsed"/>
           </StackPanel>
-          <!-- Refresh: fetch every provider now. -->
-          <Border x:Name="chromeRefresh" Grid.Column="3" HorizontalAlignment="Right" Width="30" Height="30" CornerRadius="10"
-                  BorderThickness="1" BorderBrush="#22FFFFFF" Margin="0,0,8,0" VerticalAlignment="Center"
-                  Style="{StaticResource IconButton}" ToolTip="Refresh now">
-            <Path x:Name="chromeRefreshIcon" Data="{StaticResource IcoRefresh}" Style="{StaticResource RowIcon}" Stroke="#C7C7CC"
-                  HorizontalAlignment="Center" RenderTransformOrigin="0.5,0.5">
-              <Path.RenderTransform><RotateTransform x:Name="chromeRefreshSpin" Angle="0"/></Path.RenderTransform>
-            </Path>
-          </Border>
+          <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+            <!-- Update: check GitHub for a newer release and install it. A green dot means one is ready. -->
+            <Border x:Name="chromeUpdate" Width="30" Height="30" CornerRadius="10"
+                    BorderThickness="1" BorderBrush="#22FFFFFF" Margin="0,0,8,0" VerticalAlignment="Center"
+                    Style="{StaticResource IconButton}" ToolTip="Check for updates">
+              <Grid>
+                <Path x:Name="chromeUpdateIcon" Data="{StaticResource IcoDownload}" Style="{StaticResource RowIcon}" Stroke="#C7C7CC"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <Ellipse x:Name="chromeUpdateDot" Width="7" Height="7" Fill="#30D158" HorizontalAlignment="Right" VerticalAlignment="Top"
+                         Margin="0,4,4,0" Visibility="Collapsed"/>
+              </Grid>
+            </Border>
+            <!-- Refresh: fetch every provider now. -->
+            <Border x:Name="chromeRefresh" Width="30" Height="30" CornerRadius="10"
+                    BorderThickness="1" BorderBrush="#22FFFFFF" Margin="0,0,8,0" VerticalAlignment="Center"
+                    Style="{StaticResource IconButton}" ToolTip="Refresh now">
+              <Path x:Name="chromeRefreshIcon" Data="{StaticResource IcoRefresh}" Style="{StaticResource RowIcon}" Stroke="#C7C7CC"
+                    HorizontalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                <Path.RenderTransform><RotateTransform x:Name="chromeRefreshSpin" Angle="0"/></Path.RenderTransform>
+              </Path>
+            </Border>
+          </StackPanel>
           <!-- Accounts: sign in to your AIs and see which ones are signed in. -->
           <Border x:Name="chromePill" Grid.Column="4" CornerRadius="10" Padding="9,5,9,5" BorderThickness="1"
                   BorderBrush="#22FFFFFF" VerticalAlignment="Center" Style="{StaticResource IconButton}" ToolTip="Sign in to your AIs">
@@ -1383,7 +1396,7 @@ function Update-FooterVersion {
     if (-not $script:window) { return }
     $el = $script:window.FindName('versionLabel')
     if (-not $el) { return }
-    $el.Text = if ($script:DisplayVersion) { [string]$script:DisplayVersion } else { '0.0.1 beta' }
+    $el.Text = if ($script:DisplayVersion) { [string]$script:DisplayVersion } else { '0.0.2 beta' }
     $fg = '#7C7C82'
     if ($script:Cfg -and $script:Themes) {
         $t = $script:Themes[[string]$script:Cfg.Theme]

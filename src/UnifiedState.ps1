@@ -28,7 +28,7 @@ $script:UnifiedCfgDefaults = @{
     NotchPinButton = $true           # pin button on the hover notch
     NotchPinned = $false             # notch stays out when the pointer leaves
     Language = 'en'                  # 'en' | 'zh' | 'ja'
-    PanelBg = '#17171A'              # panel background colour
+    PanelBg = '#1A1A1E'              # panel background colour
 }
 
 function ConvertTo-UnifiedSectionsMap($value) {

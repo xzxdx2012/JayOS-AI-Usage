@@ -4,17 +4,20 @@
       Setup.vbs              install (wizard)
       Setup.vbs /uninstall   remove from this computer
       Setup.ps1 -Silent      install with the default options, no window
+                             (used by the app's "Check for updates"; add
+                             -InstallDir to update a given folder in place)
 #>
 param(
     [switch]$Uninstall,
-    [switch]$Silent
+    [switch]$Silent,
+    [string]$InstallDir
 )
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
 
 $AppName      = 'JayOS AI Usage'
-$AppVersion   = '0.0.1 beta'
+$AppVersion   = '0.0.2 beta'
 $Publisher    = 'JayOS'
 $RegKey       = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\JayOS.AIUsage'
 $SourceDir    = $PSScriptRoot
@@ -695,10 +698,21 @@ if ($Uninstall) {
 
 if ($Silent) {
     try {
-        $installed = Invoke-Install $script:TargetDir $true $true
+        if ($InstallDir) { $script:TargetDir = $InstallDir.TrimEnd('\') }
+        # An update keeps the choices made at install time; a first install
+        # turns both on.
+        $existing = Test-Path -LiteralPath (Join-Path $script:TargetDir 'unified-overlay.ps1')
+        $autostart = if ($existing) { Test-Path -LiteralPath $StartupLnk } else { $true }
+        $desktop = if ($existing) { Test-Path -LiteralPath $DesktopLnk } else { $true }
+        $installed = Invoke-Install $script:TargetDir $autostart $desktop
         Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\wscript.exe') -ArgumentList ('"' + (Join-Path $installed 'Start-Unified.vbs') + '"')
         exit 0
-    } catch { exit 1 }
+    } catch {
+        # Whatever went wrong, do not leave the user without the app.
+        $vbs = Join-Path $script:TargetDir 'Start-Unified.vbs'
+        if (Test-Path -LiteralPath $vbs) { Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\wscript.exe') -ArgumentList ('"' + $vbs + '"') }
+        exit 1
+    }
 }
 
 Update-Text
