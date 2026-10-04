@@ -373,6 +373,7 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase,
 . (Join-Path $script:AppDir 'src\Pricing.ps1')
 . (Join-Path $script:AppDir 'src\History.ps1')
 . (Join-Path $script:AppDir 'src\Data.ps1')
+Remove-StaleOverlayArtifacts
 . (Join-Path $script:AppDir 'src\State.ps1')
 . (Join-Path $script:AppDir 'src\CodexData.ps1')
 . (Join-Path $script:AppDir 'src\CursorData.ps1')
@@ -694,12 +695,20 @@ function Resolve-ClaudeUsageState {
     if ($null -eq $Incoming.Data -and $Previous -and $null -ne $Previous.Data) {
         $asOf = [string]$Previous.DataAsOf
         if (-not $asOf) { $asOf = [string]$Previous.LastFetch }
-        Set-ClaudeUsageStateValue $Incoming 'Data' $Previous.Data
-        Set-ClaudeUsageStateValue $Incoming 'Stale' $true
-        Set-ClaudeUsageStateValue $Incoming 'DataAsOf' $asOf
+        $readAt = [datetime]::MinValue
+        if ([datetime]::TryParse($asOf, [ref]$readAt) -and $readAt -ge (Get-Date).AddHours(-24)) {
+            Set-ClaudeUsageStateValue $Incoming 'Data' $Previous.Data
+            Set-ClaudeUsageStateValue $Incoming 'Stale' $true
+            Set-ClaudeUsageStateValue $Incoming 'DataAsOf' $asOf
+        } else {
+            Set-ClaudeUsageStateValue $Incoming 'Stale' $false
+            Set-ClaudeUsageStateValue $Incoming 'DataAsOf' ''
+        }
     } else {
         Set-ClaudeUsageStateValue $Incoming 'Stale' $false
-        Set-ClaudeUsageStateValue $Incoming 'DataAsOf' ([string]$Incoming.LastFetch)
+        if (-not $Incoming.DataAsOf) {
+            Set-ClaudeUsageStateValue $Incoming 'DataAsOf' (Get-Date -Format 'yyyy-MM-dd HH:mm')
+        }
     }
     return $Incoming
 }
@@ -797,20 +806,29 @@ $script:Cfg['ViewMode'] = 'Pinned'
 $script:Cfg['StartHidden'] = $false
 Initialize-IslandView
 Load-History
+$cachedClaudeUsage = Get-CachedClaudeUsage
+if (-not $cachedClaudeUsage) { $cachedClaudeUsage = Get-RecentClaudeUsageFromHistory }
+if ($cachedClaudeUsage) {
+    $script:State.Data = $cachedClaudeUsage.Data
+    $script:State.Status = 'stale'
+    $script:State.Stale = $true
+    $script:State.DataAsOf = $cachedClaudeUsage.AsOf
+    $script:State.Message = 'Showing last available usage'
+}
 if ($script:UnifiedStateNeedsRepair) { Save-UnifiedState }
 if (Get-Command Invoke-FirstRunProviderPickerIfNeeded -ErrorAction SilentlyContinue) {
     Invoke-FirstRunProviderPickerIfNeeded
 }
 if (Test-DropdownMode) { Initialize-DropdownPinnedPosition }
 Sync-ViewModeMenuItems   # menu was built from defaults before state was read
-$script:State.Status  = 'init'
-$script:State.Message = 'loading...'
+if (-not $cachedClaudeUsage) {
+    $script:State.Status  = 'init'
+    $script:State.Message = 'loading...'
+}
 Update-OverlayViews
 Apply-UnifiedSettings
 Restore-UnifiedSections
 Resize-ToContent
-Start-AllRefreshJobs -UsageTimeoutSec 8
-
 # Poll timer: every 180s kick off fresh async refreshes (skips sources still running).
 $script:pollTimer = New-Object System.Windows.Threading.DispatcherTimer
 $script:pollTimer.Interval = [TimeSpan]::FromSeconds(180)
@@ -821,6 +839,26 @@ $script:pollTimer.add_Tick({ Start-AllRefreshJobs })
 $script:jobTimer = New-Object System.Windows.Threading.DispatcherTimer
 $script:jobTimer.Interval = [TimeSpan]::FromMilliseconds(500)
 $script:jobTimer.add_Tick({ [void](Complete-RefreshJobs); Complete-ProviderLoginWatchers })
+
+function Get-ClaudeCredentialStamp {
+    if (-not $script:CredPath) { return '' }
+    try {
+        $file = Get-Item -LiteralPath $script:CredPath -ErrorAction Stop
+        return ('{0}:{1}' -f $file.LastWriteTimeUtc.Ticks, $file.Length)
+    } catch { return '' }
+}
+
+$script:ClaudeCredentialStamp = Get-ClaudeCredentialStamp
+$script:credentialTimer = New-Object System.Windows.Threading.DispatcherTimer
+$script:credentialTimer.Interval = [TimeSpan]::FromSeconds(10)
+$script:credentialTimer.add_Tick({
+    $stamp = Get-ClaudeCredentialStamp
+    if ($stamp -eq $script:ClaudeCredentialStamp) { return }
+    if ($script:pollJobs.ContainsKey('ClaudeUsage') -and
+        $script:pollJobs['ClaudeUsage'].State -in @('Running', 'NotStarted')) { return }
+    $script:ClaudeCredentialStamp = $stamp
+    Start-AllRefreshJobs -Force -Kind @('ClaudeUsage')
+})
 
 # Tick timer: refreshes reset countdowns/clock every 30s (render only, no I/O,
 # no layout Measure - Resize-ToContent is intentionally NOT in this path).
@@ -897,6 +935,12 @@ if (-not (Build-And-Show)) {
 $script:pollTimer.Start()
 $script:jobTimer.Start()
 $script:tickTimer.Start()
+$script:credentialTimer.Start()
+
+# Let WPF paint the notch before starting process jobs and network work.
+[void]$script:window.Dispatcher.BeginInvoke(
+    [System.Windows.Threading.DispatcherPriority]::Background,
+    [Action]{ Start-AllRefreshJobs -UsageTimeoutSec 8 })
 
 # Write PID file so Uninstall.bat can terminate the process.
 try { [System.IO.File]::WriteAllText($script:PidPath, "$PID") } catch { }

@@ -27,4 +27,10 @@ Dim psExe
 psExe = FindPowerShell()
 If Len(psExe) = 0 Then psExe = "powershell.exe"
 
-sh.Run "conhost.exe --headless """ & psExe & """ -STA -NoLogo -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -NonInteractive -File """ & dir & "\unified-overlay.ps1"" -Background", 0, False
+Dim launchArgs
+launchArgs = " -STA -NoLogo -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -NonInteractive -File """ & dir & "\unified-overlay.ps1"" -Background"
+If LCase(psExe) = "powershell.exe" Then
+    sh.Run "powershell.exe" & launchArgs, 0, False
+Else
+    sh.Run "conhost.exe --headless """ & psExe & """" & launchArgs, 0, False
+End If
