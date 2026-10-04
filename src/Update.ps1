@@ -116,8 +116,8 @@ function Start-UpdateCheck([switch]$Manual) {
     [void]$ps.AddScript({
         param($Repo)
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-        $headers = @{ 'User-Agent' = 'JayOS-AI-Usage'; 'Accept' = 'application/vnd.github+json' }
-        $rels = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases?per_page=20" -Headers $headers -TimeoutSec 20 -UseBasicParsing
+        $headers = @{ 'Accept' = 'application/vnd.github+json' }
+        $rels = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases?per_page=20" -Headers $headers -UserAgent 'JayOS-AI-Usage' -TimeoutSec 20 -UseBasicParsing
         foreach ($rel in @($rels)) {
             if ($rel.draft) { continue }
             $asset = @($rel.assets) | Where-Object { $_.name -like '*Setup*.exe' } | Select-Object -First 1
@@ -142,7 +142,7 @@ function Start-UpdateDownload {
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
         $ProgressPreference = 'SilentlyContinue'
         if (Test-Path -LiteralPath $Dest) { Remove-Item -LiteralPath $Dest -Force }
-        Invoke-WebRequest -Uri $Url -OutFile $Dest -Headers @{ 'User-Agent' = 'JayOS-AI-Usage' } -TimeoutSec 120 -UseBasicParsing
+        Invoke-WebRequest -Uri $Url -OutFile $Dest -UserAgent 'JayOS-AI-Usage' -TimeoutSec 120 -UseBasicParsing
         (Get-Item -LiteralPath $Dest).Length
     }).AddArgument($info.Url).AddArgument($dest)
     $script:UpdateJob = @{ PS = $ps; Handle = $ps.BeginInvoke(); Kind = 'download'; Manual = $true; Dest = $dest; Size = $info.Size }

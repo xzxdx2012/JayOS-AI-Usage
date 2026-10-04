@@ -1,4 +1,4 @@
-# Data.ps1 - data fetchers: Get-Usage, Get-Stats, and the Write-Log diagnostic helper
+﻿# Data.ps1 - data fetchers: Get-Usage, Get-Stats, and the Write-Log diagnostic helper
 
 function Write-Log {
     param([string]$Message)
@@ -25,6 +25,21 @@ function Limit-LogFile([string]$Path, [long]$MaxBytes = 2MB, [int]$KeepBytes = 5
         $out = New-Object byte[] ($n - $start)
         [array]::Copy($buf, $start, $out, 0, $n - $start)
         [System.IO.File]::WriteAllBytes($Path, $out)
+    } catch { }
+}
+
+function Remove-StaleOverlayArtifacts {
+    if (-not $script:AppDir) { return }
+    $cutoff = [DateTime]::UtcNow.AddDays(-1)
+    try {
+        Get-ChildItem -LiteralPath $script:AppDir -File -ErrorAction Stop | ForEach-Object {
+            $name = $_.Name
+            $isCacheTemp = $name -match '^claude-usage-cache\.json(?:\.[0-9a-f]{32})?\.(?:tmp|bak)$'
+            $isLogBackup = $name -match '^unified-overlay-error\.log\.(?:bak|old|tmp|[0-9]+)$'
+            if (($isCacheTemp -or $isLogBackup) -and $_.LastWriteTimeUtc -lt $cutoff) {
+                Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
+            }
+        }
     } catch { }
 }
 
@@ -321,6 +336,50 @@ function Clear-ClaudeBackoff {
 # 401s on /profile from being retried every three minutes.
 function Get-ClaudeProfilePath {
     Join-Path $script:AppDir 'claude-profile.json'
+}
+
+function Get-ClaudeUsageCachePath {
+    Join-Path $script:AppDir 'claude-usage-cache.json'
+}
+
+function Save-ClaudeUsageCache($Data) {
+    if (-not $Data) { return }
+    $path = Get-ClaudeUsageCachePath
+    $tmp = $path + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
+    $backup = $path + '.' + [guid]::NewGuid().ToString('N') + '.bak'
+    try {
+        $payload = [pscustomobject]@{
+            FetchedAt = [System.DateTimeOffset]::Now.ToString('o')
+            Data = $Data
+        } | ConvertTo-Json -Depth 16
+        [System.IO.File]::WriteAllText($tmp, $payload, (New-Object System.Text.UTF8Encoding($false)))
+        if (Test-Path -LiteralPath $path) {
+            [System.IO.File]::Replace($tmp, $path, $backup)
+        } else {
+            [System.IO.File]::Move($tmp, $path)
+        }
+    } catch {
+        Write-Log "Claude usage cache save failed - $($_.Exception.GetType().Name): $($_.Exception.Message)"
+    } finally {
+        try { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue } catch { }
+        try { Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue } catch { }
+    }
+}
+
+function Get-CachedClaudeUsage {
+    try {
+        $path = Get-ClaudeUsageCachePath
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+        $saved = Get-Content -LiteralPath $path -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        $asOf = [System.DateTimeOffset]::Parse([string]$saved.FetchedAt)
+        $age = [System.DateTimeOffset]::Now - $asOf
+        if ($age.TotalHours -gt 24 -or $age.TotalMinutes -lt -5) { return $null }
+        if (-not $saved.Data -or (-not $saved.Data.five_hour -and -not $saved.Data.seven_day)) { return $null }
+        return @{ Data = $saved.Data; AsOf = $asOf.LocalDateTime.ToString('yyyy-MM-dd HH:mm') }
+    } catch {
+        Write-Log "Claude usage cache load failed - $($_.Exception.GetType().Name)"
+        return $null
+    }
 }
 
 function Get-CachedClaudeProfile {
@@ -638,6 +697,104 @@ function Invoke-ClaudeTokenNudge {
     }
 }
 
+# Renew Claude Code's sign-in the way Claude Code itself does: trade the
+# refresh token for a new access token at Anthropic's OAuth endpoint, then
+# write the new pair back into the same credentials file. Needed because the
+# access token lasts only a few hours: after a night off (or a reboot) it has
+# expired, and without this the panel shows "--" until Claude Code is opened.
+#
+# Careful with the file, since Claude Code shares it:
+# - only when every access token on disk has expired (so a running Claude Code
+#   is not mid-way through its own renewal),
+# - at most once per 10 minutes, and never again after the server rejects the
+#   refresh token (a real sign-in is needed then),
+# - the file is re-read just before writing and left alone if Claude Code
+#   changed it in the meantime; it is replaced in one step, other fields kept.
+$script:ClaudeOAuthTokenUrl = 'https://platform.claude.com/v1/oauth/token'
+$script:ClaudeOAuthClientId = '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
+
+function Invoke-ClaudeTokenRefresh([string[]]$Paths) {
+    $marker = Join-Path $script:AppDir 'claude-token-refresh.txt'
+    $rejected = $null; $limits = 0
+    try {
+        if (Test-Path -LiteralPath $marker) {
+            $last = [string](Get-Content -LiteralPath $marker -Raw -ErrorAction Stop)
+            $age = (Get-Date) - (Get-Item -LiteralPath $marker).LastWriteTime
+            # Rate limited: wait 30, 60, 120, then 240 minutes between tries.
+            if ($last -match '^limited:(\d+)') { $limits = [int]$matches[1] }
+            $wait = if ($limits -gt 0) { [math]::Min(240, 30 * [math]::Pow(2, $limits - 1)) } else { 10 }
+            if ($age.TotalMinutes -lt $wait) { return $false }
+            # The server refused this exact refresh token before: do not retry it.
+            if ($last -match '^rejected:(\S+)') { $rejected = $matches[1] }
+        }
+    } catch { }
+
+    $nowMs = [System.DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    foreach ($path in @($Paths)) {
+        if (-not $path -or -not (Test-Path -LiteralPath $path -PathType Leaf -ErrorAction SilentlyContinue)) { continue }
+        try {
+            $doc = Get-Content -LiteralPath $path -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        } catch { continue }
+        $o = $doc.claudeAiOauth
+        if (-not $o -or -not [string]$o.refreshToken) { continue }
+        $exp = 0L
+        [void][long]::TryParse([string]$o.expiresAt, [ref]$exp)
+        if ($exp -gt ($nowMs + 60000)) { continue }    # still valid: nothing to do
+        $oldRefresh = [string]$o.refreshToken
+        $oldHash = Get-ClaudeTokenHash $oldRefresh
+        if ($rejected -and $rejected -eq $oldHash) { continue }
+
+        try { Set-Content -LiteralPath $marker -Value ('tried:' + $oldHash) -Encoding UTF8 } catch { }
+        $body = @{ grant_type = 'refresh_token'; refresh_token = $oldRefresh; client_id = $script:ClaudeOAuthClientId }
+
+        $resp = $null
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+            $resp = Invoke-RestMethod -Method Post -Uri $script:ClaudeOAuthTokenUrl -ContentType 'application/x-www-form-urlencoded' `
+                -Body $body -TimeoutSec 30 -UseBasicParsing -UserAgent $script:UA
+        } catch {
+            $code = $null
+            if ($_.Exception.Response) { try { $code = [int]$_.Exception.Response.StatusCode } catch { } }
+            # 400 = invalid_grant: the refresh token is no longer valid.
+            if ($code -eq 400 -or $code -eq 401) { try { Set-Content -LiteralPath $marker -Value ('rejected:' + $oldHash) -Encoding UTF8 } catch { } }
+            elseif ($code -eq 429) { try { Set-Content -LiteralPath $marker -Value ('limited:' + ($limits + 1)) -Encoding UTF8 } catch { } }
+            $detail = ''
+            try { if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $detail = ([string]$_.ErrorDetails.Message -replace '\s+', ' ') } } catch { }
+            if ($detail.Length -gt 240) { $detail = $detail.Substring(0, 240) }
+            $retry = ''
+            try { $retry = [string]$_.Exception.Response.Headers['Retry-After'] } catch { }
+            if (-not $retry) { try { $retry = [string](@($_.Exception.Response.Headers.GetValues('Retry-After'))[0]) } catch { } }
+            Write-Log ("Claude token renewal failed - HTTP {0}{1} {2}" -f $code, $(if ($retry) { " retry-after=$retry" } else { '' }), $detail)
+            continue
+        }
+        if (-not $resp -or -not [string]$resp.access_token) { continue }
+
+        # Write back, unless Claude Code renewed (or the user re-logged) meanwhile.
+        try {
+            $doc2 = Get-Content -LiteralPath $path -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+            if ([string]$doc2.claudeAiOauth.refreshToken -ne $oldRefresh) { return $true }
+            $doc2.claudeAiOauth.accessToken = [string]$resp.access_token
+            if ([string]$resp.refresh_token) { $doc2.claudeAiOauth.refreshToken = [string]$resp.refresh_token }
+            $life = 0L
+            [void][long]::TryParse([string]$resp.expires_in, [ref]$life)
+            if ($life -le 0) { $life = 3600 }
+            $doc2.claudeAiOauth.expiresAt = [System.DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() + $life * 1000
+            $json = $doc2 | ConvertTo-Json -Depth 30 -Compress
+            $tmp = $path + '.jayos-tmp'
+            [System.IO.File]::WriteAllText($tmp, $json, (New-Object System.Text.UTF8Encoding($false)))
+            try { [System.IO.File]::Replace($tmp, $path, $null) }
+            catch { Move-Item -LiteralPath $tmp -Destination $path -Force }
+            try { Set-Content -LiteralPath $marker -Value ('renewed:' + (Get-ClaudeTokenHash ([string]$doc2.claudeAiOauth.refreshToken))) -Encoding UTF8 } catch { }
+            Write-Log 'Claude sign-in renewed'
+            return $true
+        } catch {
+            Write-Log "Claude token write-back failed - $($_.Exception.GetType().Name)"
+            continue
+        }
+    }
+    return $false
+}
+
 function Get-Usage {
     param(
         [int]$TimeoutSec = 20,
@@ -667,18 +824,22 @@ function Get-Usage {
     $expiriesIdle = @($fingerprints | ForEach-Object { [long]$_.ExpiresAt })
     if ((Test-ClaudeCredentialsExpired -ExpiresAtUnixMs $expiriesIdle -NowUnixMs $nowMsIdle) -and
         (Test-ClaudeRefreshTokenPresent $candidatePaths)) {
-        # Only the short-lived access token has run out. With a refresh token on
-        # disk the account is still signed in - Claude Code renews the pair the
-        # next time it runs - so say so instead of asking for a new login, and
-        # nudge the CLI to renew it (it owns the file; the overlay never writes it).
-        if (Test-ClaudeRefreshTokenPresent $candidatePaths) {
-            Invoke-ClaudeTokenNudge
+        # Only the short-lived access token has run out. Try renewal before
+        # reading usage; if renewal fails, offer sign-in instead of claiming
+        # the old credential can still fetch live data.
+        $renewed = $false
+        try { $renewed = Invoke-ClaudeTokenRefresh $candidatePaths } catch { }
+        if ($renewed) {
+            # Fresh token on disk: continue to the normal fetch below.
+            $fingerprints = @(Get-ClaudeCredentialFingerprints $candidatePaths)
+            $credentialSetHash = Get-ClaudeCredentialSetHash @($fingerprints | ForEach-Object { [string]$_.TokenHash })
+        } elseif (Test-ClaudeRefreshTokenPresent $candidatePaths) {
             try {
                 $cachedProfile = Get-CachedClaudeProfile
                 if ($cachedProfile -and $cachedProfile.Identity) { $script:ClaudeIdentity = $cachedProfile.Identity }
             } catch { }
-            $idleMessage = 'Signed in - usage resumes when Claude Code renews its token'
-            $script:State.Status = 'idle'; $script:State.Message = $idleMessage
+            $script:State.Status = 'auth'
+            $script:State.Message = 'Claude access expired - sign in again to restore live usage'
             return
         }
     }
@@ -744,6 +905,8 @@ function Get-Usage {
         $resp = Normalize-ClaudeQuotaWindows $resp
         $script:State.Data = $resp; $script:State.Status = 'ok'
         $script:State.Message = ''; $script:State.LastFetch = (Get-Date -Format 'HH:mm')
+        $script:State.DataAsOf = (Get-Date -Format 'yyyy-MM-dd HH:mm')
+        Save-ClaudeUsageCache $resp
         Clear-ClaudeBackoff
     } catch {
         $code = $null

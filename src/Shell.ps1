@@ -1760,24 +1760,24 @@ function Update-ClaudeSection {
     Set-CompactBar 'fivehBarC' 'fivehPctC' $d.five_hour.utilization -AccentFg $script:AccentFiveh
     Set-Spark 'fivehSpark' 'fivehSparkCanvas' 'five_hour' 'fivehSparkRow'
     Set-Spark 'fivehSparkC' 'fivehSparkCanvasC' 'five_hour' 'fivehSparkRowC'
-    if ($hasAlert) { Check-Alert 'five_hour' $d.five_hour.utilization }
+    if ($hasAlert -and -not $stale) { Check-Alert 'five_hour' $d.five_hour.utilization }
 
     Set-SectionBar 'weekBar' 'weekPct' 'weekSub' 'weekReset' $d.seven_day.utilization $d.seven_day.resets_at -AccentFg $script:AccentWeek -ResetOverride $resetOverride
     Set-CompactBar 'weekBarC' 'weekPctC' $d.seven_day.utilization -AccentFg $script:AccentWeek
     Set-Spark 'weekSpark' 'weekSparkCanvas' 'seven_day' 'weekSparkRow'
     Set-Spark 'weekSparkC' 'weekSparkCanvasC' 'seven_day' 'weekSparkRowC'
-    if ($hasAlert) { Check-Alert 'seven_day' $d.seven_day.utilization }
+    if ($hasAlert -and -not $stale) { Check-Alert 'seven_day' $d.seven_day.utilization }
 
     Set-SectionBar 'fabBar' 'fabPct' 'fabSub' 'fabReset' $d.seven_day_fable.utilization $d.seven_day_fable.resets_at -AccentFg $script:AccentFab -ResetOverride $resetOverride
     Set-CompactBar 'fabBarC' 'fabPctC' $d.seven_day_fable.utilization -AccentFg $script:AccentFab
-    if ($hasAlert) { Check-Alert 'seven_day_fable' $d.seven_day_fable.utilization }
+    if ($hasAlert -and -not $stale) { Check-Alert 'seven_day_fable' $d.seven_day_fable.utilization }
 
     if ($d.seven_day_opus) {
         $script:window.FindName('opusRow').Visibility = [System.Windows.Visibility]::Visible
         $oc = $script:window.FindName('opusRowC'); if ($oc) { $oc.Visibility = [System.Windows.Visibility]::Visible }
         Set-SectionBar 'opusBar' 'opusPct' 'opusSub' 'opusReset' $d.seven_day_opus.utilization $d.seven_day_opus.resets_at -AccentFg $script:AccentOpus -ResetOverride $resetOverride
         Set-CompactBar 'opusBarC' 'opusPctC' $d.seven_day_opus.utilization -AccentFg $script:AccentOpus
-        if ($hasAlert) { Check-Alert 'seven_day_opus' $d.seven_day_opus.utilization }
+        if ($hasAlert -and -not $stale) { Check-Alert 'seven_day_opus' $d.seven_day_opus.utilization }
     } else {
         $script:window.FindName('opusRow').Visibility = [System.Windows.Visibility]::Collapsed
         $oc = $script:window.FindName('opusRowC'); if ($oc) { $oc.Visibility = [System.Windows.Visibility]::Collapsed }

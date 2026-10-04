@@ -65,6 +65,32 @@ function Load-History {
     }
 }
 
+function Get-RecentClaudeUsageFromHistory {
+    $now = [System.DateTimeOffset]::Now
+    for ($i = $script:History.Count - 1; $i -ge 0; $i--) {
+        $sample = $script:History[$i]
+        try {
+            $asOf = [System.DateTimeOffset]::Parse([string]$sample.t)
+            $age = $now - $asOf
+            if ($age.TotalHours -gt 24 -or $age.TotalMinutes -lt -5) { continue }
+            $data = [ordered]@{}
+            foreach ($field in Get-ClaudeHistoryQuotaFields) {
+                $property = $sample.PSObject.Properties[$field]
+                if ($property -and $null -ne $property.Value) {
+                    $data[$field] = [pscustomobject]@{
+                        utilization = [double]$property.Value
+                        resets_at = $null
+                    }
+                }
+            }
+            if ($data.Count -gt 0) {
+                return @{ Data = [pscustomobject]$data; AsOf = $asOf.LocalDateTime.ToString('yyyy-MM-dd HH:mm') }
+            }
+        } catch { }
+    }
+    return $null
+}
+
 function Add-HistorySample([object]$data, $FreshProviders = $null) {
     # $data is the API response object from Get-Usage ($script:State.Data)
     $sampleData = [ordered]@{

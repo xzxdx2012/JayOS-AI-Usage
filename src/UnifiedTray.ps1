@@ -317,6 +317,9 @@ $script:I18nText = @{
     'Active' = @{ zh = '正常'; ja = '稼働中'; fr = 'Actif'; ko = '정상' }
     'Signed in' = @{ zh = '已登录'; ja = 'サインイン済み'; fr = 'Connecté'; ko = '로그인됨' }
     'Not set up' = @{ zh = '未设置'; ja = '未設定'; fr = 'Non configuré'; ko = '설정 안 됨' }
+    'Sign in' = @{ zh = '需要登录'; ja = 'サインインが必要'; fr = 'Se connecter'; ko = '로그인 필요' }
+    'Showing last available usage' = @{ zh = '显示最近一次的用量'; ja = '最後に取得した使用量を表示中'; fr = 'Dernières données disponibles'; ko = '마지막 사용량 표시 중' }
+    'Claude access expired - sign in again to restore live usage' = @{ zh = 'Claude 登录已过期，重新登录后恢复实时用量'; ja = 'Claude のアクセスが期限切れです。再度サインインするとライブ使用量が戻ります'; fr = 'Accès Claude expiré : reconnectez-vous pour retrouver l''usage en direct'; ko = 'Claude 접근이 만료되었습니다. 다시 로그인하면 실시간 사용량이 복원됩니다' }
     'Stale' = @{ zh = '数据过期'; ja = 'データが古い'; fr = 'Périmé'; ko = '오래된 데이터' }
     'Error' = @{ zh = '错误'; ja = 'エラー'; fr = 'Erreur'; ko = '오류' }
     'Syncing' = @{ zh = '同步中'; ja = '同期中'; fr = 'Synchro'; ko = '동기화 중' }
@@ -1090,8 +1093,17 @@ function Update-NotchInfoLayout {
 
 function Update-IslandValues {
     if (-not $script:NotchTags) { return }
+    if ($script:NotchBackdrop) {
+        $script:NotchBackdrop.ToolTip = if ($script:State -and [bool]$script:State.Stale) {
+            'Claude ' + (Format-ClaudeStaleReset ([string]$script:State.DataAsOf))
+        } else { $null }
+    }
     foreach ($key in @($script:NotchTags.Keys)) {
         $tag = $script:NotchTags[$key]
+        if ($key -eq 'claude') {
+            $stale = $script:State -and [bool]$script:State.Stale
+            $tag.Element.Opacity = if ($stale) { 0.65 } else { 1.0 }
+        }
         $metrics = @(Get-ProviderUsedMetrics $key)
         for ($i = 0; $i -lt $tag.Values.Count -and $i -lt $metrics.Count; $i++) {
             Set-NotchUsedText $tag.Values[$i] $metrics[$i].Value
@@ -1249,7 +1261,7 @@ function Initialize-IslandView {
 $script:ProviderPillStyles = @{
     ok          = @{ Text = 'Active';     Fg = '#30D158'; Bg = '#1A30D158'; Bd = '#3830D158' }
     stale       = @{ Text = 'Stale';      Fg = '#FF9F0A'; Bg = '#1AFF9F0A'; Bd = '#38FF9F0A' }
-    auth        = @{ Text = 'Not set up'; Fg = '#FF453A'; Bg = '#1AFF453A'; Bd = '#38FF453A' }
+    auth        = @{ Text = 'Sign in';    Fg = '#FF453A'; Bg = '#1AFF453A'; Bd = '#38FF453A' }
     error       = @{ Text = 'Error';      Fg = '#FF453A'; Bg = '#1AFF453A'; Bd = '#38FF453A' }
     unavailable = @{ Text = 'Not set up'; Fg = '#A1A1A6'; Bg = '#10FFFFFF'; Bd = '#22FFFFFF' }
     refreshing  = @{ Text = 'Syncing';    Fg = '#E5E5EA'; Bg = '#14FFFFFF'; Bd = '#26FFFFFF' }
@@ -1295,7 +1307,7 @@ function Update-PanelChrome {
     $stateText = $w.FindName('chromeStateText')
     $time = $w.FindName('timeText')
     if ($stateText) {
-        $words = @{ ok = 'Live'; stale = 'Stale'; auth = 'Not set up'; error = 'Error'; unavailable = 'Not set up'; refreshing = 'Syncing'; idle = 'Signed in ' + [char]0x00B7 + ' idle'; init = 'Loading' }
+        $words = @{ ok = 'Live'; stale = 'Stale'; auth = 'Sign in'; error = 'Error'; unavailable = 'Not set up'; refreshing = 'Syncing'; idle = 'Signed in ' + [char]0x00B7 + ' idle'; init = 'Loading' }
         $word = $words[$chromeKey]
         $clock = if ($time) { [string]$time.Text } else { '' }
         if ($chromeKey -eq 'ok' -and $clock -match '^\d{1,2}:\d{2}') { $word = 'Live ' + [char]0x00B7 + ' ' + $clock }
@@ -1317,7 +1329,7 @@ function Update-PanelChrome {
     $pillText = $w.FindName('chromePillText')
     $pillAlert = $w.FindName('chromePillAlert')
     if ($pill) { $pill.BorderBrush = NewBrush $(if ($needsSignIn) { '#55FF453A' } else { '#22FFFFFF' }) }
-    if ($pillText) { $pillText.Text = if ($needsSignIn) { 'Not set up' } else { 'Accounts' } }
+    if ($pillText) { $pillText.Text = if ($needsSignIn) { 'Sign in' } else { 'Accounts' } }
     if ($pillAlert) { $pillAlert.Visibility = if ($needsSignIn) { $script:VisVisible } else { $script:VisCollapsed } }
 
     # Card status pills.
@@ -3918,7 +3930,7 @@ function Get-AccountState([string]$Key) {
         'ok'          { return @{ Tag = 'acct:ok';    Text = 'Signed in';  Tip = 'Click to sign in again' } }
         'stale'       { return @{ Tag = 'acct:stale'; Text = 'Signed in';  Tip = 'Signed in - last refresh failed' } }
         'idle'        { return @{ Tag = 'acct:ok';    Text = 'Signed in';  Tip = 'Signed in (token idle) - click to sign in again' } }
-        'auth'        { return @{ Tag = 'acct:auth';  Text = 'Not set up'; Tip = 'Not signed in - click to sign in' } }
+        'auth'        { return @{ Tag = 'acct:auth';  Text = 'Sign in'; Tip = 'Live access expired - click to sign in' } }
         'error'       { return @{ Tag = 'acct:stale'; Text = 'Error';      Tip = 'Click to sign in again' } }
         'unavailable' { return @{ Tag = 'acct:missing'; Text = 'Not set up'; Tip = 'Click to sign in' } }
     }
