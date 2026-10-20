@@ -21,6 +21,7 @@ $AppVersion   = '0.0.3 beta'
 $Publisher    = 'JayOS'
 $RegKey       = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\JayOS.AIUsage'
 $SourceDir    = $PSScriptRoot
+. (Join-Path $SourceDir 'src\StateFile.ps1')
 $DefaultDir   = Join-Path $env:LOCALAPPDATA 'JayOS AI Usage'
 # Updating: reuse the folder of an existing install so its settings carry over.
 try {
@@ -387,15 +388,15 @@ function New-Shortcut([string]$Path, [string]$TargetDir) {
 function Save-LanguageSetting([string]$TargetDir) {
     $path = Join-Path $TargetDir 'unified-overlay-state.json'
     $state = [ordered]@{}
-    if (Test-Path -LiteralPath $path) {
+    if ((Test-Path -LiteralPath $path) -or (Test-Path -LiteralPath ($path + '.bak'))) {
         try {
-            $old = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+            $old = Read-StateJson $path
             foreach ($p in $old.PSObject.Properties) { $state[$p.Name] = $p.Value }
         } catch { }
     }
     # A silent update keeps the language the app already uses.
     if (-not ($Silent -and $state.Contains('Language'))) { $state['Language'] = $script:Lang }
-    $state | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $path -Encoding UTF8
+    Write-StateJsonAtomic $path $state
 }
 
 # ---------------------------------------------------------------------------
@@ -525,11 +526,32 @@ function Invoke-Install([string]$TargetDir, [bool]$Autostart, [bool]$Desktop) {
 
 # Returns $false when the user chose to keep the app because its hooks could
 # not be removed (the agents would otherwise call a deleted script).
+# Resolve paths before removing hooks or any installation metadata. Registry
+# values are only hints: never accept a root or an unmarked directory.
+function Resolve-UninstallDir([string]$SourceDir, [string]$RegisteredDir) {
+    foreach ($candidate in @($RegisteredDir, $SourceDir)) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+        $full = [IO.Path]::GetFullPath($candidate).TrimEnd([IO.Path]::DirectorySeparatorChar)
+        if ($full -eq [IO.Path]::GetPathRoot($full).TrimEnd([IO.Path]::DirectorySeparatorChar)) { continue }
+        if (Test-Path -LiteralPath (Join-Path $full 'unified-overlay.ps1') -PathType Leaf) { return $full }
+    }
+    throw 'No marked JayOS installation found; nothing was removed.'
+}
+
+function Resolve-InstallTarget([string]$Picked) {
+    if ((Test-Path -LiteralPath (Join-Path $Picked 'unified-overlay.ps1') -PathType Leaf) -or
+        (Split-Path -Leaf $Picked) -eq 'JayOS AI Usage') { return $Picked }
+    return Join-Path $Picked 'JayOS AI Usage'
+}
+
 function Invoke-Uninstall {
+    $registered = $null
+    try { $registered = (Get-ItemProperty -Path $RegKey -ErrorAction Stop).InstallLocation } catch { }
+    $uninstallDir = Resolve-UninstallDir $SourceDir $registered
     # Take our hooks back out of ~/.claude/settings.json and ~/.codex/hooks.json.
     $failed = @()
     try {
-        $script:AppDir = (Resolve-Path -LiteralPath $SourceDir).Path
+        $script:AppDir = $uninstallDir
         . (Join-Path $script:AppDir 'src\Requests.ps1')
         try { [void](Set-ClaudeRequestHooks $false) } catch { $failed += ('{0}  ({1})' -f (Get-ClaudeUserSettingsPath), $_.Exception.Message) }
         try { [void](Set-CodexRequestHooks $false) } catch { $failed += ('{0}  ({1})' -f (Get-CodexHooksPath), $_.Exception.Message) }
@@ -551,7 +573,7 @@ function Invoke-Uninstall {
     Remove-Item -Path $RegKey -Recurse -Force -ErrorAction SilentlyContinue
     # This script (and possibly the PowerShell running it) lives in the folder
     # being removed: a helper outside it waits for this process to exit first.
-    $dir = (Resolve-Path -LiteralPath $SourceDir).Path
+    $dir = $uninstallDir
     $cmd = "Wait-Process -Id $PID -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500; Remove-Item -LiteralPath '{0}' -Recurse -Force -ErrorAction SilentlyContinue" -f $dir.Replace("'", "''")
     $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))
     Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -WindowStyle Hidden -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -EncodedCommand ' + $enc)
@@ -658,12 +680,7 @@ Register-Tap $ui.browseButton {
     try { $dlg.UseDescriptionForTitle = $true } catch { }   # .NET 5+ only
     if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         $picked = $dlg.SelectedPath
-        # An existing install is updated in place; any other non-empty folder
-        # gets its own "JayOS AI Usage" subfolder.
-        $isInstall = Test-Path -LiteralPath (Join-Path $picked 'unified-overlay.ps1')
-        if (-not $isInstall -and (Split-Path -Leaf $picked) -ne 'JayOS AI Usage' -and (Get-ChildItem -LiteralPath $picked -Force -ErrorAction SilentlyContinue | Select-Object -First 1)) {
-            $picked = Join-Path $picked 'JayOS AI Usage'
-        }
+        $picked = Resolve-InstallTarget $picked
         $script:TargetDir = $picked
         $ui.locationText.Text = $picked
     }

@@ -1,4 +1,6 @@
-﻿# UnifiedState.ps1 - settings persistence, window positioning, and clipboard export
+﻿. (Join-Path $PSScriptRoot 'StateFile.ps1')
+
+# UnifiedState.ps1 - settings persistence, window positioning, and clipboard export
 
 $script:UnifiedSectionKeys = @('claude', 'codex', 'cursor', 'grok')
 
@@ -94,7 +96,7 @@ function Save-UnifiedState {
             if ($val -is [datetime]) { $val = $val.ToString('o') }
             $out[$key] = $val
         }
-        $out | ConvertTo-Json -Depth 6 | Set-Content -Path $script:StatePath -Encoding UTF8
+        Write-StateJsonAtomic $script:StatePath $out
         $script:UnifiedStateNeedsRepair = $false
     } catch {
         try { Write-Log "Save-UnifiedState failed: $($_.Exception.Message)" } catch { }
@@ -105,9 +107,9 @@ function Load-UnifiedState {
     $script:UnifiedStateNeedsRepair = $false
     try {
         Initialize-UnifiedCfg
-        if (-not (Test-Path $script:StatePath)) { return }
+        if (-not (Test-Path -LiteralPath $script:StatePath) -and -not (Test-Path -LiteralPath ($script:StatePath + '.bak'))) { return }
 
-        $s = Get-Content $script:StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $s = Read-StateJson $script:StatePath
         foreach ($key in @('Left', 'Top', 'Opacity', 'StartHidden', 'ShowStats', 'Compact', 'Theme', 'ShowAlerts', 'ShowGraph', 'ViewMode', 'DropdownHotkey', 'ToggleOverlayHotkey', 'RefreshHotkey', 'DropdownMonitor', 'DropdownOpacity', 'DropdownHideOnFocusLoss', 'NotchPinButton', 'NotchPinned', 'Language', 'PanelBg', 'PanelBgRecent', 'CodexCreditPeak', 'CodexCreditLast', 'AiRequests', 'AiRequestRemind', 'AiNotifyDone', 'AiNotifyAttention')) {
             $prop = $s.PSObject.Properties[$key]
             if ($prop -and $null -ne $prop.Value) { $script:Cfg[$key] = $prop.Value }

@@ -399,6 +399,37 @@ $script:I18nText = @{
     'Recent' = @{ zh = '最近使用'; ja = '最近使った色'; fr = 'Récentes'; ko = '최근 사용' }
     'Cancel' = @{ zh = '取消'; ja = 'キャンセル'; fr = 'Annuler'; ko = '취소' }
     'Apply' = @{ zh = '应用'; ja = '適用'; fr = 'Appliquer'; ko = '적용' }
+    'Earliest expires {0}.' = @{ zh = ' 最早于 {0} 到期。'; ja = ' 最も早い有効期限：{0}。'; fr = ' Première expiration : {0}.'; ko = ' 가장 빠른 만료일: {0}.' }
+    'Monitor with mouse' = @{ zh = '鼠标所在显示器'; ja = 'マウスのあるモニター'; fr = 'Écran de la souris'; ko = '마우스가 있는 모니터' }
+    'Primary' = @{ zh = '主显示器'; ja = 'メインモニター'; fr = 'Écran principal'; ko = '주 모니터' }
+    'Install Claude Code' = @{ zh = '安装 Claude Code'; ja = 'Claude Code をインストール'; fr = 'Installer Claude Code'; ko = 'Claude Code 설치' }
+    'Dashboard' = @{ zh = '控制台'; ja = 'ダッシュボード'; fr = 'Tableau de bord'; ko = '대시보드' }
+    'Cursor docs' = @{ zh = 'Cursor 文档'; ja = 'Cursor ドキュメント'; fr = 'Documentation Cursor'; ko = 'Cursor 문서' }
+    'ChatGPT Codex' = @{ zh = 'ChatGPT Codex 网页版'; ja = 'ChatGPT Codex を開く'; fr = 'Ouvrir ChatGPT Codex'; ko = 'ChatGPT Codex 열기' }
+    'Install Codex CLI' = @{ zh = '安装 Codex 命令行工具'; ja = 'Codex CLI をインストール'; fr = 'Installer Codex CLI'; ko = 'Codex CLI 설치' }
+    'Install Grok CLI' = @{ zh = '安装 Grok 命令行工具'; ja = 'Grok CLI をインストール'; fr = 'Installer Grok CLI'; ko = 'Grok CLI 설치' }
+    'Console / billing' = @{ zh = '控制台 / 账单'; ja = 'コンソール / 請求'; fr = 'Console / facturation'; ko = '콘솔 / 결제' }
+    'Claude Usage Critical' = @{ zh = 'Claude 用量即将耗尽'; ja = 'Claude の使用量が上限間近'; fr = 'Utilisation Claude : seuil critique'; ko = 'Claude 사용량 한도 임박' }
+    'Claude Usage Warning' = @{ zh = 'Claude 用量预警'; ja = 'Claude の使用量の警告'; fr = 'Alerte d''utilisation Claude'; ko = 'Claude 사용량 경고' }
+    '{0} at {1}%' = @{ zh = '{0}已使用 {1}%'; ja = '{0}の使用量：{1}%'; fr = '{0} à {1} %'; ko = '{0} 사용량 {1}%' }
+    '(~{0} min to limit)' = @{ zh = '（预计约 {0} 分钟后达到上限）'; ja = '（上限まで約{0}分）'; fr = ' (limite dans environ {0} min)'; ko = ' (한도까지 약 {0}분)' }
+    'AI Usage Overlay Test' = @{ zh = 'AI 用量悬浮窗测试'; ja = 'AI 使用量オーバーレイのテスト'; fr = 'Test de l''affichage d''utilisation IA'; ko = 'AI 사용량 오버레이 테스트' }
+    'Threshold alerts are working.' = @{ zh = '用量阈值提醒正常。'; ja = '使用量のしきい値通知は正常です。'; fr = 'Les alertes de seuil fonctionnent.'; ko = '사용량 임계값 알림이 정상 작동합니다.' }
+    'Drag to move' = @{ zh = '拖动以移动'; ja = 'ドラッグして移動'; fr = 'Glisser pour déplacer'; ko = '드래그하여 이동' }
+    'Not installed - opens the install page' = @{ zh = '尚未安装，点击打开安装页面'; ja = '未インストール：クリックでインストールページを開く'; fr = 'Non installé : ouvrir la page d''installation'; ko = '설치되지 않음 - 클릭하여 설치 페이지 열기' }
+    'Click to sign in again' = @{ zh = '点击重新登录'; ja = 'クリックして再ログイン'; fr = 'Cliquer pour se reconnecter'; ko = '클릭하여 다시 로그인' }
+    'Signed in - last refresh failed' = @{ zh = '已登录，但上次刷新失败'; ja = 'ログイン済み：前回の更新に失敗'; fr = 'Connecté, mais la dernière actualisation a échoué'; ko = '로그인됨 - 마지막 새로 고침 실패' }
+    'Signed in (token idle) - click to sign in again' = @{ zh = '已登录（令牌暂未使用），点击重新登录'; ja = 'ログイン済み（トークン待機中）：クリックして再ログイン'; fr = 'Connecté (jeton inactif) : cliquer pour se reconnecter'; ko = '로그인됨 (토큰 유휴 상태) - 클릭하여 다시 로그인' }
+    'Live access expired - click to sign in' = @{ zh = '实时访问授权已过期，点击登录'; ja = 'リアルタイムアクセスの期限切れ：クリックしてログイン'; fr = 'Accès en temps réel expiré : cliquer pour se connecter'; ko = '실시간 접근 만료 - 클릭하여 로그인' }
+    'Click to sign in' = @{ zh = '点击登录'; ja = 'クリックしてログイン'; fr = 'Cliquer pour se connecter'; ko = '클릭하여 로그인' }
+    'Waiting for the first refresh' = @{ zh = '等待首次刷新'; ja = '初回の更新を待機中'; fr = 'En attente de la première actualisation'; ko = '첫 새로 고침 대기 중' }
+    'Signed in. Live usage returns when Claude Code renews its token.' = @{ zh = '已登录。Claude Code 续期令牌后将恢复实时用量。'; ja = 'ログイン済み。Claude Code がトークンを更新するとリアルタイム使用量が再表示されます。'; fr = 'Connecté. L''utilisation en temps réel reviendra après le renouvellement du jeton par Claude Code.'; ko = '로그인됨. Claude Code가 토큰을 갱신하면 실시간 사용량이 다시 표시됩니다.' }
+    'Runs Claude Code in the background with a one-line Haiku prompt when the sign-in has expired (at most every 30 minutes).' = @{ zh = '登录过期时，在后台向 Claude Code 发送一条简短的 Haiku 提示以续期（最多每 30 分钟一次）。'; ja = 'ログイン期限切れ時に、バックグラウンドで Claude Code に短い Haiku プロンプトを送信して更新します（最大30分に1回）。'; fr = 'Après expiration de la connexion, lance Claude Code en arrière-plan avec une courte requête Haiku (au plus une fois toutes les 30 minutes).'; ko = '로그인이 만료되면 백그라운드에서 Claude Code에 짧은 Haiku 프롬프트를 보내 갱신합니다 (최대 30분에 한 번).' }
+    'One-time usage reset availability could not be verified.' = @{ zh = '暂时无法确认可用的用量重置次数。'; ja = '利用可能な使用量リセット回数を確認できませんでした。'; fr = 'Impossible de vérifier le nombre de réinitialisations disponibles.'; ko = '사용량 초기화 가능 횟수를 확인할 수 없습니다.' }
+    'One-time usage resets. Redeem on the Grok Usage page.' = @{ zh = '可用的单次用量重置次数，请前往 Grok 用量页面使用。'; ja = '使用量の単発リセット。Grok の使用量ページで利用できます。'; fr = 'Réinitialisations ponctuelles à utiliser sur la page d''utilisation Grok.'; ko = '일회성 사용량 초기화. Grok 사용량 페이지에서 사용할 수 있습니다.' }
+    'Reset availability needs refreshing after expiry.' = @{ zh = '重置次数已过期，请刷新后查看。'; ja = '有効期限が切れたため、リセット回数を再取得してください。'; fr = 'Actualisez les réinitialisations disponibles après expiration.'; ko = '유효 기간이 만료되어 초기화 가능 횟수를 새로 고쳐야 합니다.' }
+    'One-time usage resets you can redeem on the Codex usage page.' = @{ zh = '可在 Codex 用量页面使用的单次用量重置次数。'; ja = 'Codex の使用量ページで利用できる単発リセット。'; fr = 'Réinitialisations ponctuelles à utiliser sur la page d''utilisation Codex.'; ko = 'Codex 사용량 페이지에서 사용할 수 있는 일회성 초기화.' }
+    'Sign in to your AIs' = @{ zh = '登录 AI 账号'; ja = 'AI アカウントにログイン'; fr = 'Se connecter aux comptes IA'; ko = 'AI 계정 로그인' }
     'Every colour here keeps the text readable.' = @{ zh = '这里的每种颜色都能看清文字。'; ja = 'ここの色はどれも文字が読みやすい明るさです。'; fr = 'Chaque couleur ici garde le texte lisible.'; ko = '여기 있는 색은 모두 글자가 잘 보입니다.' }
 }
 # Single words inside the two-tone stat values ("456 in / 98.9k out").
@@ -411,6 +442,13 @@ $script:I18nWords = @{
     'available' = @{ zh = '次可用'; ja = '回利用可'; fr = 'disponible'; ko = '회 사용 가능' }
 }
 $script:I18nRules = @(
+    @{ rx = '^Claude Code cloud sessions: \$(.+) of \$(.+) left\. Expires (.*)\.$'; zh = 'Claude Code 云端会话额度：剩余 $$$1 / $$$2，到期时间：$3。'; ja = 'Claude Code クラウドセッション：残り $$$1 / $$$2。有効期限：$3。'; fr = 'Sessions cloud Claude Code : $$$1 restants sur $$$2. Expiration : $3.'; ko = 'Claude Code 클라우드 세션: $$$2 중 $$$1 남음. 만료: $3.' },
+    @{ rx = '^(.+) credits left of a (.+) top-up \((.+)% left\)\.$'; zh = '加购额度共 $2，剩余 $1（$3%）。'; ja = '追加クレジット $2 のうち残り $1（$3%）。'; fr = 'Il reste $1 crédits sur une recharge de $2 ($3 % restants).'; ko = '추가 크레딧 $2 중 $1 남음 ($3%).' },
+    @{ rx = '^as of (.+)$'; zh = '截至 $1'; ja = '$1 時点'; fr = 'au $1'; ko = '$1 기준' },
+    @{ rx = '^Claude as of (.+)$'; zh = 'Claude 数据截至 $1'; ja = 'Claude：$1 時点'; fr = 'Claude : au $1'; ko = 'Claude: $1 기준' },
+    @{ rx = '^(.*)\(primary\)$'; zh = '$1（主显示器）'; ja = '$1（メイン）'; fr = '$1(principal)'; ko = '$1(주 모니터)' },
+    @{ rx = '^Click to sign in to (.+)$'; zh = '点击登录 $1'; ja = '$1 にログインするにはクリック'; fr = 'Cliquer pour se connecter à $1'; ko = '$1에 로그인하려면 클릭' },
+    @{ rx = '^Open (.+)$'; zh = '打开 $1'; ja = '$1 を開く'; fr = 'Ouvrir $1'; ko = '$1 열기' },
     @{ rx = '^Update to (.+)$'; zh = '更新到 $1'; ja = '$1 に更新'; fr = 'Mettre à jour vers $1'; ko = '$1(으)로 업데이트' },
     @{ rx = '^Up to date \((.+)\)$'; zh = '已是最新版（$1）'; ja = '最新版です（$1）'; fr = 'À jour ($1)'; ko = '최신 버전 ($1)' },
     @{ rx = '^Live · (.+)$'; zh = '实时 · $1'; ja = 'ライブ · $1'; fr = 'En direct · $1'; ko = '실시간 · $1' },
@@ -418,7 +456,7 @@ $script:I18nRules = @(
     @{ rx = '^(\d+)h (\d+)m left$'; zh = '剩 $1 小时 $2 分'; ja = '残り $1時間$2分'; fr = 'reste $1 h $2 min'; ko = '$1시간 $2분 남음' },
     @{ rx = '^(\d+)m left$'; zh = '剩 $1 分钟'; ja = '残り $1分'; fr = 'reste $1 min'; ko = '$1분 남음' },
     @{ rx = '^(\d+) available$'; zh = '$1 次可用'; ja = '$1 回利用可'; fr = '$1 disponible(s)'; ko = '$1회 사용 가능' },
-    @{ rx = '^of ([\d,.]+)$'; zh = '共 $1'; ja = '/ $1'; fr = 'sur $1'; ko = '/ $1' },
+    @{ rx = '^of ([\d\s\u202F\u00A0,.]+)$'; zh = '共 $1'; ja = '/ $1'; fr = 'sur $1'; ko = '/ $1' },
     @{ rx = '^Version (.+)$'; zh = '版本 $1'; ja = 'バージョン $1'; fr = 'Version $1'; ko = '버전 $1' },
     @{ rx = '^Log in (\S+)$'; zh = '登录 $1'; ja = '$1 にサインイン'; fr = 'Connexion à $1'; ko = '$1 로그인' },
     @{ rx = '^(\S+) not installed$'; zh = '$1 未安装'; ja = '$1 未インストール'; fr = '$1 non installé'; ko = '$1 설치 안 됨' },
@@ -442,6 +480,16 @@ function Convert-I18nString([string]$Text, [string]$Lang) {
         $t = [string]$script:I18nText[$key][$Lang]
         if ($t) { return $t }
         return $Text
+    }
+    if ($key -match '^(.+) Earliest expires (.+)\.$') {
+        $base = $matches[1]; $expiry = $matches[2]
+        return (Convert-I18nString $base $Lang) + ((Convert-I18nString ' Earliest expires {0}.' $Lang) -f $expiry)
+    }
+    if ($key -match '^(.+) at (\d+)%(?: \(~(.+) min to limit\))?$') {
+        $label = $matches[1]; $pct = $matches[2]; $mins = $matches[3]
+        $body = (Convert-I18nString '{0} at {1}%' $Lang) -f (Convert-I18nString $label $Lang), $pct
+        if ($mins) { $body += ((Convert-I18nString ' (~{0} min to limit)' $Lang) -f $mins) }
+        return $body
     }
     foreach ($r in $script:I18nRules) {
         if ($key -match $r.rx) { return [regex]::Replace($key, $r.rx, [string]$r[$Lang]) }
@@ -479,30 +527,48 @@ function Invoke-I18nTextBlock($Tb, [string]$Lang) {
     Set-I18nMemo $Tb $src $new
 }
 
+# Keep tooltip memo keys separate from the text on the same control. Store
+# keys on the control rather than in a global table retaining dynamic menus.
+function Invoke-I18nToolTip($Element, [string]$Lang, [string]$Property = 'ToolTip') {
+    if (-not $Element.PSObject.Properties[$Property]) { return }
+    if ($Element.$Property -isnot [string]) { return }
+    $cur = [string]$Element.$Property
+    $memoName = 'JayOSI18n' + $Property
+    $memo = $Element.PSObject.Properties[$memoName]
+    $src = $cur
+    if ($memo -and $memo.Value.Shown -ceq $cur) { $src = $memo.Value.Source }
+    $new = Convert-I18nString $src $Lang
+    $Element.$Property = $new
+    $Element | Add-Member -NotePropertyName $memoName -NotePropertyValue @{ Source = $src; Shown = $new } -Force
+}
+
 function Invoke-UiTranslate {
     if (-not $script:window -or -not $script:window.Content) { return }
     $lang = Get-UiLanguage
-    if ($lang -eq 'en' -and $script:I18nOrig.Count -eq 0) { return }
     if (-not $script:I18nBlocks -or $script:I18nBlocksWindow -ne $script:window) {
         $list = [System.Collections.Generic.List[object]]::new()
         $stack = New-Object System.Collections.Stack
         $stack.Push($script:window.Content)
         while ($stack.Count -gt 0) {
             $n = $stack.Pop()
-            if ($n -is [System.Windows.Controls.TextBlock]) { [void]$list.Add($n); continue }
+            [void]$list.Add($n)
             if ($n -isnot [System.Windows.DependencyObject]) { continue }
             foreach ($c in [System.Windows.LogicalTreeHelper]::GetChildren($n)) { if ($c -is [System.Windows.DependencyObject]) { $stack.Push($c) } }
         }
         $script:I18nBlocks = $list
         $script:I18nBlocksWindow = $script:window
     }
-    foreach ($tb in $script:I18nBlocks) { try { Invoke-I18nTextBlock $tb $lang } catch { } }
+    foreach ($tb in $script:I18nBlocks) {
+        try { Invoke-I18nToolTip $tb $lang } catch { }
+        if ($tb -is [System.Windows.Controls.TextBlock]) { try { Invoke-I18nTextBlock $tb $lang } catch { } }
+    }
 }
 
 function Invoke-MenuTranslate($Items) {
     $lang = Get-UiLanguage
     foreach ($it in @($Items)) {
         if ($it -isnot [System.Windows.Forms.ToolStripItem] -or $it -is [System.Windows.Forms.ToolStripSeparator]) { continue }
+        Invoke-I18nToolTip $it $lang 'ToolTipText'
         $cur = [string]$it.Text
         $src = Get-I18nSource $it $cur
         $plain = $src -replace '&&', '&'
@@ -791,6 +857,21 @@ function Get-CpText([string]$Text) {
     try { return (Convert-I18nString $Text (Get-UiLanguage)) } catch { return $Text }
 }
 
+# Coordinates are DIPs in the panel monitor's work area (Get-WorkArea).
+function Get-CpPickerPosition($Area, $PanelRect, $Size) {
+    $width = [math]::Min([double]$Size.Width, $Area.Right - $Area.Left)
+    $height = [math]::Min([double]$Size.Height, $Area.Bottom - $Area.Top)
+    $left = $Area.Left + ($Area.Right - $Area.Left - $width) / 2
+    $right = $PanelRect.Left + $PanelRect.Width + 4
+    if ($right + $width -le $Area.Right) { $left = $right }
+    elseif ($PanelRect.Left - $width - 4 -ge $Area.Left) { $left = $PanelRect.Left - $width - 4 }
+    return @{
+        Left = [math]::Max($Area.Left, [math]::Min($left, $Area.Right - $width))
+        Top = [math]::Max($Area.Top, [math]::Min($PanelRect.Top, $Area.Bottom - $height))
+        Width = $width; Height = $height
+    }
+}
+
 function Invoke-CustomPanelBackground {
     if ($script:ColorPicker) { try { $script:ColorPicker.Activate() } catch { }; return }
     $xaml = @"
@@ -936,18 +1017,14 @@ function Invoke-CustomPanelBackground {
 
     # Beside the panel when there is room, otherwise centred on its screen.
     $w.WindowStartupLocation = 'Manual'
-    $area = [System.Windows.SystemParameters]::WorkArea
-    $pw = 332; $ph = 560
-    $left = $area.Left + ($area.Width - $pw) / 2; $top = $area.Top + 90
-    try {
-        $mw = $script:window
-        if ($mw -and $mw.IsVisible) {
-            $right = $mw.Left + $mw.ActualWidth + 4
-            $left = if ($right + $pw -le $area.Right) { $right } elseif ($mw.Left - $pw - 4 -ge $area.Left) { $mw.Left - $pw - 4 } else { $left }
-            $top = [math]::Max($area.Top, [math]::Min($mw.Top, $area.Bottom - $ph))
-        }
-    } catch { }
-    $w.Left = $left; $w.Top = $top
+    $area = Get-WorkArea
+    $mw = $script:window
+    $w.Measure([System.Windows.Size]::new([double]::PositiveInfinity, [double]::PositiveInfinity))
+    $pos = Get-CpPickerPosition $area @{ Left = $mw.Left; Top = $mw.Top; Width = $mw.ActualWidth } $w.DesiredSize
+    $w.SizeToContent = 'Manual'
+    $w.Left = $pos.Left; $w.Top = $pos.Top
+    # On a small/high-DPI monitor keep the dialog inside the work area too.
+    $w.Width = $pos.Width; $w.Height = $pos.Height
 
     Set-CpFromHex (Get-PanelBgHex)
     $w.Show()
@@ -1471,6 +1548,7 @@ function Update-IslandValues {
             'Claude ' + (Format-ClaudeStaleReset ([string]$script:State.DataAsOf))
         } else { $null }
     }
+    if ($script:NotchBackdrop) { Invoke-I18nToolTip $script:NotchBackdrop (Get-UiLanguage) }
     foreach ($key in @($script:NotchTags.Keys)) {
         $tag = $script:NotchTags[$key]
         if ($key -eq 'claude') {
@@ -2662,7 +2740,14 @@ function Get-NotchCursorLocal {
 # Hover is read from the cursor position rather than WPF MouseEnter/Leave: the
 # silhouette changes under a still pointer, and a layered window only hears
 # about the mouse over its painted pixels.
+# A stale MouseDown flag is not evidence that a button is still held.
+function Test-NotchHolding([bool]$InNotch, [bool]$Pressed, [bool]$ButtonsDown, [bool]$Pinned) {
+    return ($InNotch -or ($Pressed -and $ButtonsDown) -or $Pinned)
+}
+
 function Invoke-NotchHoverPoll {
+    $buttonsDown = ([System.Windows.Forms.Control]::MouseButtons -ne [System.Windows.Forms.MouseButtons]::None)
+    if ($script:NotchPressed -and -not $buttonsDown) { $script:NotchPressed = $false }
     try {
         if (-not $script:window -or -not $script:window.IsVisible) { return }
         if (-not (Test-NotchShell)) { return }
@@ -2699,7 +2784,7 @@ function Invoke-NotchHoverPoll {
                 $script:NotchDwellMs = 0.0
             }
         } elseif ($state -eq 'NOTCH') {
-            if ($inNotch -or $script:NotchPressed -or (Test-NotchPinned)) {
+            if ((Test-NotchHolding $inNotch $script:NotchPressed $buttonsDown $false) -or (Test-NotchPinned)) {
                 $script:NotchLeaveMs = 0.0
             } else {
                 $script:NotchLeaveMs += $tick
@@ -2935,7 +3020,7 @@ function Wire-UnifiedWindowEvents {
         $tile = $script:window.FindName($sectionKey + 'IconTile')
         if ($tile) {
             $tile.Cursor = [System.Windows.Input.Cursors]::Hand
-            $tile.ToolTip = 'Open ' + $script:ProviderMeta[$sectionKey].Name
+            $tile.ToolTip = Convert-I18nString ('Open ' + $script:ProviderMeta[$sectionKey].Name) (Get-UiLanguage)
             $tile.Add_MouseLeftButtonDown({ param($s, $e) $e.Handled = $true })
             $tile.Add_MouseLeftButtonUp([scriptblock]::Create("param(`$s, `$e) `$e.Handled = `$true; Open-ProviderApp '$sectionKey'"))
         }
@@ -3553,8 +3638,8 @@ function Invoke-TestAlert {
     if (-not $script:notify) { return }
     $script:notify.ShowBalloonTip(
         4000,
-        'AI Usage Overlay Test',
-        'Threshold alerts are working.',
+        (Convert-I18nString 'AI Usage Overlay Test' (Get-UiLanguage)),
+        (Convert-I18nString 'Threshold alerts are working.' (Get-UiLanguage)),
         [System.Windows.Forms.ToolTipIcon]::Info
     )
 }
@@ -3602,7 +3687,7 @@ function Check-Alert([string]$key, $util, $resetAt = $null) {
             $mins = Get-Eta $script:History $key
             if ($null -ne $mins) { $eta = " (~$mins min to limit)" }
         }
-        $script:notify.ShowBalloonTip(5000, 'Claude Usage Critical', "$label at $([int]$u)%$eta", [System.Windows.Forms.ToolTipIcon]::Warning)
+        $script:notify.ShowBalloonTip(5000, (Convert-I18nString 'Claude Usage Critical' (Get-UiLanguage)), (Convert-I18nString "$label at $([int]$u)%$eta" (Get-UiLanguage)), [System.Windows.Forms.ToolTipIcon]::Warning)
         Set-AlertState $key ([int]$script:CritPct) $resetWindow
         return
     }
@@ -3610,7 +3695,7 @@ function Check-Alert([string]$key, $util, $resetAt = $null) {
     # Fire WARN alert (crosses into WarnPct band)
     if ($u -ge $script:WarnPct -and $last -lt $script:WarnPct) {
         $label = Get-AlertLabel $key
-        $script:notify.ShowBalloonTip(4000, 'Claude Usage Warning', "$label at $([int]$u)%", [System.Windows.Forms.ToolTipIcon]::Info)
+        $script:notify.ShowBalloonTip(4000, (Convert-I18nString 'Claude Usage Warning' (Get-UiLanguage)), (Convert-I18nString "$label at $([int]$u)%" (Get-UiLanguage)), [System.Windows.Forms.ToolTipIcon]::Info)
         Set-AlertState $key ([int]$script:WarnPct) $resetWindow
         return
     }
@@ -3759,7 +3844,7 @@ foreach ($scr in (Get-DropdownScreens)) {
 }
 [void]$miView.DropDownItems.Add($miMonitor)
 
-$miHideFocus = New-StripItem 'Hide when it loses focus' {
+$script:miHideFocus = New-StripItem 'Hide when it loses focus' {
     $script:Cfg['DropdownHideOnFocusLoss'] = -not [bool]$script:Cfg['DropdownHideOnFocusLoss']
     $miHideFocus.Checked = [bool]$script:Cfg['DropdownHideOnFocusLoss']
     Save-UnifiedState
@@ -4274,6 +4359,12 @@ function Sync-MenuToggleStates {
             $item.Checked = [bool]$script:Cfg[$script:MenuToggleKeys[$k]]
         }
     }
+    if ($script:opacityItems) {
+        foreach ($kv in $script:opacityItems.GetEnumerator()) {
+            $kv.Value.Checked = ([math]::Abs([double]$script:Cfg.Opacity - [double]::Parse($kv.Key.TrimEnd('%'), [cultureinfo]::InvariantCulture) / 100.0) -lt 0.00001)
+        }
+    }
+    if ($script:miHideFocus) { $script:miHideFocus.Checked = [bool]$script:Cfg.DropdownHideOnFocusLoss }
     Sync-SectionMenuItems
     Sync-IslandMenuItem
     try { Sync-AiRemindItems } catch { }

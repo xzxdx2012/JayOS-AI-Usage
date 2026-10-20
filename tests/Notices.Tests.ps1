@@ -33,10 +33,14 @@ function Invoke-Hook([string]$Json, [string]$Agent = 'claude') {
     $info.Arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path (Join-Path $fixture 'hooks') 'ClaudeHook.ps1') + '" -Agent ' + $Agent
     $info.UseShellExecute = $false; $info.CreateNoWindow = $true
     $info.RedirectStandardInput = $true; $info.RedirectStandardOutput = $true; $info.RedirectStandardError = $true
+    # Send actual UTF-8 bytes even on Windows with a legacy console code page.
+    # Otherwise the BOM fixture is changed to '?' by the parent before the hook reads it.
     $p = New-Object System.Diagnostics.Process; $p.StartInfo = $info
     try {
         [void]$p.Start()
-        $p.StandardInput.WriteLine($Json); $p.StandardInput.Close()
+        $bytes = [Text.Encoding]::UTF8.GetBytes($Json + "`n")
+        $p.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
+        $p.StandardInput.BaseStream.Flush(); $p.StandardInput.Close()
         $done = $p.WaitForExit(8000)
         return @{ Exited = $done; Out = $p.StandardOutput.ReadToEnd() }
     } finally { if (-not $p.HasExited) { $p.Kill(); $p.WaitForExit() }; $p.Dispose() }
