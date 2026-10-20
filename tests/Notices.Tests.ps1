@@ -54,6 +54,12 @@ try {
     Assert (@(Get-ChildItem -LiteralPath $reqDir -Filter '*.req.json' -File).Count -eq 0) 'finished turn: no request to answer'
     Clear-Notes
 
+    # A parent whose console is UTF-8 can put a byte order mark before the JSON;
+    # Windows PowerShell 5.1's ConvertFrom-Json rejects it.
+    $r = Invoke-Hook ([string][char]0xFEFF + '{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"Done."}')
+    Assert (@(Get-Notes).Count -eq 1) 'input with a byte order mark is still read'
+    Clear-Notes
+
     $r = Invoke-Hook '{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"Should I use Redis or Postgres?"}' 'codex'
     $n = Get-Notes
     Assert ($r.Exited -and [string]::IsNullOrEmpty($r.Out) -and $n.Count -eq 1 -and $n[0].kind -eq 'ask' -and $n[0].agent -eq 'codex') 'either/or question: "answer in the terminal" notice'
