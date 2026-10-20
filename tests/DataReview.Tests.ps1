@@ -1,4 +1,4 @@
-# DataReview.Tests.ps1 - regression tests for docs/reviews/review-data.md
+﻿# DataReview.Tests.ps1 - regression tests for docs/reviews/review-data.md
 # (dates read back under other cultures, Codex catch-up polls, the Claude job
 # ceiling). Fixtures only: fake tokens, temp folders; never reads real
 # credentials or the real ~/.codex.
@@ -31,11 +31,12 @@ function Import-SourceFunctions([string]$Path, [string[]]$Names) {
     }
 }
 
-$fixture = [IO.Path]::Combine([IO.Path]::GetTempPath(), 'jayos-data-review-' + [guid]::NewGuid().ToString('N'))
+$fixture = [IO.Path]::Combine($PSScriptRoot, 'jayos-data-review-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $fixture -Force | Out-Null
 $script:AppDir = $fixture
 $script:ErrLog = [IO.Path]::Combine($fixture, 'errors.log')
 $src = [IO.Path]::Combine($root, 'src')
+function claude { 'claude-code/test' }
 . ([IO.Path]::Combine($src, 'Config.ps1'))
 function Get-WslHomeRoots { return @() }
 . ([IO.Path]::Combine($src, 'Format.ps1'))
@@ -143,7 +144,7 @@ try {
 } finally {
     foreach ($v in @($savedEnv.Keys)) { [Environment]::SetEnvironmentVariable($v, $savedEnv[$v]) }
     $resolved = [IO.Path]::GetFullPath($fixture)
-    if ($resolved.StartsWith([IO.Path]::GetFullPath([IO.Path]::GetTempPath()), [StringComparison]::OrdinalIgnoreCase)) {
+    if ($resolved.StartsWith([IO.Path]::GetFullPath($PSScriptRoot), [StringComparison]::OrdinalIgnoreCase)) {
         Remove-Item -LiteralPath $resolved -Recurse -Force -ErrorAction SilentlyContinue
     }
 }

@@ -1,8 +1,9 @@
-# UiLogic.Tests.ps1 - UI-independent helpers from Shell.ps1 and UnifiedTray.ps1.
+﻿# UiLogic.Tests.ps1 - UI-independent helpers from Shell.ps1 and UnifiedTray.ps1.
 # Only the needed functions (and the script variables they read) are loaded
 # through the AST, so no WPF window is built.
 
 $ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Drawing
 $root = Split-Path -Parent $PSScriptRoot
 $script:count = 0
 function Assert($Value, [string]$Name) {
@@ -28,6 +29,7 @@ function Import-SourcePart([string]$File, [string[]]$Functions, [string[]]$Varia
     }
 }
 
+. Import-SourcePart 'Config.ps1' @('ConvertTo-DateTimeOffset') @()
 . Import-SourcePart 'Shell.ps1' @('Get-UsageBandColor', 'Get-UsageSpectrumStops', 'New-UsageBrush', 'Format-PanelReset',
     'Get-CodexCreditReference', 'Get-ClaudeCloudCredit') @('BandYellowPct', 'BandRedPct', 'UsageSpectrum')
 . Import-SourcePart 'UnifiedTray.ps1' @('ConvertTo-CpRgb', 'ConvertFrom-CpHex', 'Get-CpPanelHex', 'Get-CpRecent', 'Add-CpRecent',

@@ -1300,10 +1300,10 @@ function Set-SectionBar([string]$bar, [string]$pct, [string]$sub, [string]$reset
 
 # Panel wording for a reset countdown: "4h 58m remaining" / "3d 20h remaining".
 # The compact header detail and the Quake view keep Format-Reset's short glyph form.
-function Format-PanelReset([string]$iso) {
+function Format-PanelReset($iso) {
     if (-not $iso) { return '' }
     try {
-        $span = [System.DateTimeOffset]::Parse($iso) - [System.DateTimeOffset]::Now
+        $span = (ConvertTo-DateTimeOffset $iso) - [System.DateTimeOffset]::Now
         if ($span.TotalSeconds -le 0) { return 'resetting now' }
         if ($span.TotalDays  -ge 1) { return ('{0}d {1}h left' -f [int][math]::Floor($span.TotalDays), $span.Hours) }
         if ($span.TotalHours -ge 1) { return ('{0}h {1:00}m left' -f [int][math]::Floor($span.TotalHours), $span.Minutes) }
@@ -1348,7 +1348,15 @@ function Set-Spark([string]$sparkName, [string]$canvasName, [string]$metricKey, 
     $samples = $script:History
     if (-not $showGraph -or $null -eq $samples -or $samples.Count -lt 2) { & $hide; return }
 
-    $valid = @($samples | Where-Object { $null -ne $_.$metricKey })
+    # Parse each sample independently before selecting endpoints. A damaged
+    # sample must never abort refresh of this or another provider.
+    $valid = @($samples | ForEach-Object {
+        if ($null -ne $_.$metricKey) {
+            try {
+                [pscustomobject]@{ Time = (ConvertTo-DateTimeOffset $_.t); Value = [double]$_.$metricKey }
+            } catch { }
+        }
+    } | Sort-Object Time)
     if ($valid.Count -lt 2) { & $hide; return }
     if ($row) { $row.Visibility = [System.Windows.Visibility]::Visible }
 
@@ -1356,15 +1364,15 @@ function Set-Spark([string]$sparkName, [string]$canvasName, [string]$metricKey, 
     $w = $canvas.Width
     $h = $canvas.Height
 
-    $t0 = [System.DateTimeOffset]::Parse($valid[0].t)
-    $t1 = [System.DateTimeOffset]::Parse($valid[-1].t)
+    $t0 = $valid[0].Time
+    $t1 = $valid[-1].Time
     $tRange = ($t1 - $t0).TotalSeconds
     if ($tRange -le 0) { return }
 
     foreach ($s in $valid) {
-        $tSec = ([System.DateTimeOffset]::Parse($s.t) - $t0).TotalSeconds
+        $tSec = ($s.Time - $t0).TotalSeconds
         $x = [double]($tSec / $tRange) * $w
-        $y = $h - ([math]::Max(0, [math]::Min(100, [double]($s.$metricKey))) / 100.0 * $h)
+        $y = $h - ([math]::Max(0, [math]::Min(100, $s.Value)) / 100.0 * $h)
         [void]$spark.Points.Add([System.Windows.Point]::new($x, $y))
     }
 }
@@ -2149,7 +2157,7 @@ function Update-GrokResetDisplay {
             $label.Text = '--'
             $label.ToolTip = 'Reset availability needs refreshing after expiry.'
         } else {
-            $label.ToolTip += (' Earliest expires {0:MMM d, yyyy h:mm tt}.' -f $end.LocalDateTime)
+            $label.ToolTip += (' Earliest expires {0:yyyy-MM-dd HH:mm}.' -f $end.LocalDateTime)
         }
     }
 }
@@ -2396,10 +2404,10 @@ function Update-AllSections {
     }
     Set-SectionStatusDots $statuses
 
-    Update-ClaudeSection
-    Update-CodexSection
-    Update-CursorSection
-    Update-GrokSection
+    try { Update-ClaudeSection } catch { try { Write-Log "Claude section refresh failed: $($_.Exception.Message)" } catch { } }
+    try { Update-CodexSection } catch { try { Write-Log "Codex section refresh failed: $($_.Exception.Message)" } catch { } }
+    try { Update-CursorSection } catch { try { Write-Log "Cursor section refresh failed: $($_.Exception.Message)" } catch { } }
+    try { Update-GrokSection } catch { try { Write-Log "Grok section refresh failed: $($_.Exception.Message)" } catch { } }
     if (Get-Command Update-ProviderVersionLabels -ErrorAction SilentlyContinue) { Update-ProviderVersionLabels }
 
     if (Get-Command Sync-CompactModeBodies -ErrorAction SilentlyContinue) { Sync-CompactModeBodies }
