@@ -118,6 +118,30 @@ function Get-AncestorPids {
     return $chain
 }
 
+# How deeply objects and arrays nest in $Value (a plain value is 0), counted
+# without recursion. The answer wraps the input three levels deep inside a
+# -Depth 30 document, so 24 leaves room to spare.
+$maxInputDepth = 24
+function Get-JsonDepth($Value) {
+    $max = 0
+    $values = New-Object 'System.Collections.Generic.Stack[object]'
+    $levels = New-Object 'System.Collections.Generic.Stack[int]'
+    $values.Push($Value); $levels.Push(1)
+    while ($values.Count -gt 0) {
+        $v = $values.Pop(); $level = $levels.Pop()
+        if ($null -eq $v -or $v -is [string] -or $v -is [ValueType]) { continue }
+        if ($level -gt $max) { $max = $level; if ($max -gt $maxInputDepth) { break } }
+        if ($v -is [System.Collections.IDictionary]) {
+            foreach ($k in @($v.Keys)) { $values.Push($v[$k]); $levels.Push($level + 1) }
+        } elseif ($v -is [System.Collections.IEnumerable]) {
+            foreach ($c in $v) { $values.Push($c); $levels.Push($level + 1) }
+        } else {
+            foreach ($p in $v.PSObject.Properties) { $values.Push($p.Value); $levels.Push($level + 1) }
+        }
+    }
+    return $max
+}
+
 # A notice (nothing to answer): <id>.note.json, written and left for the notch.
 # The agent is never kept waiting for it.
 function Write-Notice([string]$Kind, [string]$Text) {
@@ -193,6 +217,14 @@ try {
         }
         # The card scrolls; only very long turns are cut, and marked as cut.
         if ($message.Length -gt 6000) { $message = '[…] ' + $message.Substring($message.Length - 6000) }
+    }
+
+    # ConvertTo-Json -Depth 30 (request file and answer below) turns anything
+    # nested deeper into a string such as "@{x=}". Input that deep is left to
+    # the terminal rather than shown cut or handed back altered.
+    if ((Get-JsonDepth $in.tool_input) -gt $maxInputDepth -or (Get-JsonDepth $in.permission_suggestions) -gt $maxInputDepth) {
+        Write-HookLog 'skipped: input nested too deeply to hand over whole'
+        exit 0
     }
 
     $stage = 'write request'
