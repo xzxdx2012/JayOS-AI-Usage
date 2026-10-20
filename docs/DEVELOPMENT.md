@@ -29,7 +29,7 @@ Usage bands: green < 60 %, yellow >= 60 %, red >= 85 % (Get-UsageBandColor). Pan
 - `$host` is reserved. Use `[IO.Path]::Combine` instead of Join-Path with drive letters in tests.
 - Don't use `.GetNewClosure()` in WPF event handlers (script functions become invisible); call plain functions.
 - Don't rely on `x:Name` on Freezables (brushes) in XAML; build brushes in code.
-- Some tests still contain Windows-only paths; on Linux they currently need path edits (see task T2).
+- Tests build paths from relative parts (Join-Path / [IO.Path]::Combine) and use fixture paths for executables and install folders, so they run unchanged on Windows and Linux.
 
 ## Data sources
 - Claude: OAuth usage endpoint. Fields five_hour, seven_day, seven_day_opus, seven_day_fable (often absent), a promotional cloud-session credit under a changing code name (found by shape: limit_dollars / remaining_dollars / resets_at). No reset-credit count is exposed.
