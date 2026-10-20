@@ -1149,15 +1149,23 @@ $script:UsageSpectrum = @(
     @(85,  '#FF453A'),
     @(100, '#D70015')
 )
-function New-UsageBrush($util) {
+# Stop offsets for New-UsageBrush: each spectrum point placed against the
+# filled part of the track (offsets past 1 fall outside the bar).
+function Get-UsageSpectrumStops($util) {
     $u = [math]::Max(1.0, [math]::Min(100.0, [double]$util))
+    foreach ($st in $script:UsageSpectrum) {
+        @{ Color = [string]$st[1]; Offset = [double]$st[0] / $u }
+    }
+}
+
+function New-UsageBrush($util) {
     $b = New-Object System.Windows.Media.LinearGradientBrush
     $b.StartPoint = [System.Windows.Point]::new(0, 0)
     $b.EndPoint   = [System.Windows.Point]::new(1, 0)
-    foreach ($st in $script:UsageSpectrum) {
+    foreach ($st in (Get-UsageSpectrumStops $util)) {
         $g = New-Object System.Windows.Media.GradientStop
-        $g.Color  = [System.Windows.Media.ColorConverter]::ConvertFromString([string]$st[1])
-        $g.Offset = [double]$st[0] / $u
+        $g.Color  = [System.Windows.Media.ColorConverter]::ConvertFromString($st.Color)
+        $g.Offset = $st.Offset
         [void]$b.GradientStops.Add($g)
     }
     return $b
