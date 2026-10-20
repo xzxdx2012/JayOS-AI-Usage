@@ -17,7 +17,7 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
 
 $AppName      = 'JayOS AI Usage'
-$AppVersion   = '0.0.2 beta'
+$AppVersion   = '0.0.3 beta'
 $Publisher    = 'JayOS'
 $RegKey       = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\JayOS.AIUsage'
 $SourceDir    = $PSScriptRoot
@@ -69,6 +69,8 @@ $T = @{
         UninstBody   = 'This removes JayOS AI Usage, its shortcuts and its settings from this computer.'
         Remove       = 'Remove'
         RemovedBody  = 'JayOS AI Usage has been removed.'
+        HooksLeftTitle = 'Hooks not removed'
+        HooksLeftBody  = "JayOS could not remove its hook entries from these files:`n`n{0}`n`nIf you uninstall now, Claude Code / Codex will still try to run a script that no longer exists. You can remove the entries that mention ClaudeHook.ps1 by hand afterwards.`n`nUninstall anyway?"
         PickFolder   = 'Choose where to install JayOS AI Usage'
     }
     zh = @{
@@ -95,6 +97,8 @@ $T = @{
         UninstBody   = '这会从这台电脑上删除 JayOS AI Usage、它的快捷方式和设置。'
         Remove       = '卸载'
         RemovedBody  = 'JayOS AI Usage 已卸载。'
+        HooksLeftTitle = '没能移除 hook'
+        HooksLeftBody  = "JayOS 没能从下面这些文件里删掉它的 hook 条目：`n`n{0}`n`n如果现在卸载，Claude Code / Codex 仍会尝试运行一个已经不存在的脚本。之后你可以手动删掉其中提到 ClaudeHook.ps1 的条目。`n`n仍然卸载吗？"
         PickFolder   = '选择 JayOS AI Usage 的安装位置'
     }
     fr = @{
@@ -121,6 +125,8 @@ $T = @{
         UninstBody   = 'JayOS AI Usage, ses raccourcis et ses réglages seront supprimés de cet ordinateur.'
         Remove       = 'Désinstaller'
         RemovedBody  = 'JayOS AI Usage a été désinstallé.'
+        HooksLeftTitle = 'Hooks non supprimés'
+        HooksLeftBody  = "JayOS n'a pas pu retirer ses hooks de ces fichiers :`n`n{0}`n`nSi vous désinstallez maintenant, Claude Code / Codex essaieront encore de lancer un script supprimé. Vous pourrez retirer à la main les entrées qui mentionnent ClaudeHook.ps1.`n`nDésinstaller quand même ?"
         PickFolder   = "Choisissez le dossier d'installation de JayOS AI Usage"
     }
     ja = @{
@@ -147,6 +153,8 @@ $T = @{
         UninstBody   = 'JayOS AI Usage とショートカット、設定をこのコンピューターから削除します。'
         Remove       = 'アンインストール'
         RemovedBody  = 'JayOS AI Usage を削除しました。'
+        HooksLeftTitle = 'フックを削除できませんでした'
+        HooksLeftBody  = "次のファイルから JayOS のフック設定を削除できませんでした:`n`n{0}`n`n今アンインストールすると、Claude Code / Codex は存在しないスクリプトを実行しようとします。ClaudeHook.ps1 を含む項目は後で手動で削除できます。`n`nアンインストールを続けますか?"
         PickFolder   = 'JayOS AI Usage のインストール先を選択'
     }
     ko = @{
@@ -173,6 +181,8 @@ $T = @{
         UninstBody   = '이 컴퓨터에서 JayOS AI Usage와 바로 가기, 설정을 삭제합니다.'
         Remove       = '제거'
         RemovedBody  = 'JayOS AI Usage가 제거되었습니다.'
+        HooksLeftTitle = '훅을 제거하지 못했습니다'
+        HooksLeftBody  = "다음 파일에서 JayOS 훅 항목을 제거하지 못했습니다:`n`n{0}`n`n지금 제거하면 Claude Code / Codex가 더 이상 없는 스크립트를 실행하려고 합니다. ClaudeHook.ps1이 들어 있는 항목은 나중에 직접 지울 수 있습니다.`n`n그래도 제거할까요?"
         PickFolder   = 'JayOS AI Usage 설치 위치 선택'
     }
 }
@@ -475,7 +485,7 @@ function Invoke-Install([string]$TargetDir, [bool]$Autostart, [bool]$Desktop) {
             $from = Join-Path $src $name
             if (Test-Path -LiteralPath $from) { Copy-Item -LiteralPath $from -Destination $dst -Force }
         }
-        foreach ($dir in 'src','icons','assets') {
+        foreach ($dir in 'src','icons','assets','hooks') {
             $from = Join-Path $src $dir
             if (-not (Test-Path -LiteralPath $from)) { continue }
             $to = Join-Path $dst $dir
@@ -513,7 +523,27 @@ function Invoke-Install([string]$TargetDir, [bool]$Autostart, [bool]$Desktop) {
     return $dst
 }
 
+# Returns $false when the user chose to keep the app because its hooks could
+# not be removed (the agents would otherwise call a deleted script).
 function Invoke-Uninstall {
+    # Take our hooks back out of ~/.claude/settings.json and ~/.codex/hooks.json.
+    $failed = @()
+    try {
+        $script:AppDir = (Resolve-Path -LiteralPath $SourceDir).Path
+        . (Join-Path $script:AppDir 'src\Requests.ps1')
+        try { [void](Set-ClaudeRequestHooks $false) } catch { $failed += ('{0}  ({1})' -f (Get-ClaudeUserSettingsPath), $_.Exception.Message) }
+        try { [void](Set-CodexRequestHooks $false) } catch { $failed += ('{0}  ({1})' -f (Get-CodexHooksPath), $_.Exception.Message) }
+    } catch { $failed += ('hook cleanup could not run  ({0})' -f $_.Exception.Message) }
+    if ($failed.Count -gt 0) {
+        $list = $failed -join "`n"
+        if ($Silent) {
+            # No one to ask: leave a note where it can be found.
+            try { [System.IO.File]::WriteAllText((Join-Path ([System.IO.Path]::GetTempPath()) 'JayOS-AI-Usage-hooks-left.txt'), $list) } catch { }
+        } else {
+            $answer = [System.Windows.MessageBox]::Show(((S 'HooksLeftBody') -f $list), (S 'HooksLeftTitle'), 'YesNo', 'Warning')
+            if ([string]$answer -ne 'Yes') { return $false }
+        }
+    }
     Stop-RunningOverlay
     foreach ($lnk in $StartMenuLnk, $DesktopLnk, $StartupLnk) {
         if (Test-Path -LiteralPath $lnk) { Remove-Item -LiteralPath $lnk -Force -ErrorAction SilentlyContinue }
@@ -525,6 +555,7 @@ function Invoke-Uninstall {
     $cmd = "Wait-Process -Id $PID -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500; Remove-Item -LiteralPath '{0}' -Recurse -Force -ErrorAction SilentlyContinue" -f $dir.Replace("'", "''")
     $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))
     Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -WindowStyle Hidden -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -EncodedCommand ' + $enc)
+    return $true
 }
 
 # ---------------------------------------------------------------------------
@@ -641,7 +672,9 @@ Register-Tap $ui.nextButton {
   try {
     if ($script:Mode -eq 'uninstall') {
         if ($script:Removed) { $win.Close(); return }
-        try { Invoke-Uninstall } catch { }
+        $done = $true
+        try { $done = [bool](Invoke-Uninstall) } catch { }
+        if (-not $done) { $win.Close(); return }
         $script:Removed = $true
         $ui.welcomeBody.Text = S 'RemovedBody'
         $ui.backButton.Visibility = 'Collapsed'

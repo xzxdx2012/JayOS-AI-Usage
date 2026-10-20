@@ -10,3 +10,12 @@ installer/payload.zip
 installer/*.syso
 installer/*.exe
 installer/.stage/
+
+# Runtime files the app writes next to itself
+requests/
+*-cache.json
+claude-profile.json
+claude-credential-preference.json
+hook-registrations.json
+overlay-history.json
+PROJECT-LOG.md

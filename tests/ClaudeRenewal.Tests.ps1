@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 
 $script:AppDir = Join-Path $PSScriptRoot '.claude-renewal-test'
 $script:CredPath = Join-Path $script:AppDir '.credentials.json'
@@ -14,32 +14,38 @@ try {
     @{ claudeAiOauth = @{ accessToken = 'old-access'; refreshToken = 'old-refresh'; expiresAt = $expired } } |
         ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $script:CredPath -Encoding UTF8
 
-    function Invoke-RestMethod {
-        param($Method, $Uri, $ContentType, $Body, $TimeoutSec, [switch]$UseBasicParsing, $UserAgent)
-        if ($Method -ne 'Post' -or $Uri -ne $script:ClaudeOAuthTokenUrl -or
-            $ContentType -ne 'application/x-www-form-urlencoded' -or
-            $Body.grant_type -ne 'refresh_token' -or $Body.refresh_token -ne 'old-refresh' -or
-            $Body.client_id -ne $script:ClaudeOAuthClientId -or $Body.ContainsKey('scope')) {
-            throw 'OAuth refresh did not use the expected form fields.'
-        }
-        return [pscustomobject]@{ access_token = 'new-access'; refresh_token = 'new-refresh'; expires_in = 3600 }
-    }
-
-    if (-not (Invoke-ClaudeTokenRefresh @($script:CredPath))) { throw 'OAuth refresh did not report success.' }
-    $updated = (Get-Content -LiteralPath $script:CredPath -Raw | ConvertFrom-Json).claudeAiOauth
-    if ($updated.accessToken -ne 'new-access' -or $updated.refreshToken -ne 'new-refresh' -or
-        [long]$updated.expiresAt -le [System.DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) {
-        throw 'OAuth refresh did not save the rotated credentials.'
-    }
-
-    $updated.expiresAt = $expired
-    @{ claudeAiOauth = $updated } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $script:CredPath -Encoding UTF8
-    function Invoke-ClaudeTokenRefresh { return $false }
+    # Expired access token + refresh token: Claude Code is asked to renew it
+    # (a hidden one-line `claude -p` run), and the panel keeps "signed in".
+    $script:Started = @()
+    function Resolve-ClaudeCliExecutable { 'C:\Tools\claude.exe' }
+    function Start-Process { param($FilePath, $ArgumentList, $WorkingDirectory, $WindowStyle) $script:Started += ,@($FilePath, [string]$ArgumentList) }
     $script:State = @{ Data = $null; Status = 'init'; LastFetch = ''; Message = '' }
     Get-Usage -TimeoutSec 1
-    if ($script:State.Status -ne 'auth' -or $script:State.Message -notmatch 'sign in') {
-        throw 'Expired Claude credentials did not request reconnection.'
+    if ($script:State.Status -ne 'idle') { throw "Expected 'idle' while renewing, got '$($script:State.Status)'." }
+    $launch = ($script:Started | ForEach-Object { $_ -join ' ' }) -join ' | '
+    if ($script:Started.Count -ne 1 -or $launch -notmatch 'claude\.exe' -or
+        $launch -notmatch '-p "Reply with OK\." --model haiku --max-turns 1 --no-session-persistence') {
+        throw 'Claude Code was not started to renew the sign-in.'
     }
+
+    # A second poll right away waits instead of starting Claude Code again.
+    Get-Usage -TimeoutSec 1
+    if ($script:Started.Count -ne 1 -or $script:State.Status -ne 'idle') { throw 'Renewal was retried too soon.' }
+
+    # After the last allowed try, a real sign-in is asked for.
+    @{ Tries = $script:ClaudeCliRenewalMaxTries; Last = (Get-Date).AddHours(-2).ToString('o') } | ConvertTo-Json |
+        Set-Content -LiteralPath (Get-ClaudeCliRenewalPath) -Encoding UTF8
+    Get-Usage -TimeoutSec 1
+    if ($script:State.Status -ne 'auth' -or $script:State.Message -notmatch 'sign in') {
+        throw 'Expired Claude credentials did not request reconnection after the renewal tries.'
+    }
+
+    # Without Claude Code installed there is nothing to renew with.
+    Clear-ClaudeCliRenewal
+    function Resolve-ClaudeCliExecutable { $null }
+    Get-Usage -TimeoutSec 1
+    if ($script:State.Status -ne 'auth') { throw 'Missing Claude Code did not request sign-in.' }
+    Remove-Item Function:\Start-Process, Function:\Resolve-ClaudeCliExecutable -ErrorAction SilentlyContinue
 
     $mainPath = Join-Path (Split-Path $PSScriptRoot -Parent) 'unified-overlay.ps1'
     $tokens = $null; $parseErrors = $null
@@ -61,7 +67,7 @@ try {
 
     'Claude renewal tests passed on PowerShell {0}.' -f $PSVersionTable.PSVersion
 } finally {
-    foreach ($name in '.credentials.json', '.credentials.json.jayos-tmp', 'claude-token-refresh.txt', 'claude-credential-preference.json', 'errors.log') {
+    foreach ($name in '.credentials.json', 'claude-cli-renewal.json', 'claude-credential-preference.json', 'claude-backoff.json', 'claude-profile.json', 'errors.log') {
         Remove-Item -LiteralPath (Join-Path $script:AppDir $name) -Force -ErrorAction SilentlyContinue
     }
     Remove-Item -LiteralPath $script:AppDir -Force -ErrorAction SilentlyContinue

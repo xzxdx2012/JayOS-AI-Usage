@@ -389,6 +389,17 @@ $script:I18nText = @{
     'Update check failed' = @{ zh = '检查更新失败'; ja = '更新を確認できませんでした'; fr = 'Échec de la vérification'; ko = '업데이트 확인 실패' }
     'Update download failed' = @{ zh = '更新下载失败'; ja = '更新のダウンロードに失敗'; fr = 'Échec du téléchargement'; ko = '업데이트 다운로드 실패' }
     'Installing update…' = @{ zh = '正在安装更新…'; ja = '更新をインストール中…'; fr = 'Installation de la mise à jour…'; ko = '업데이트 설치 중…' }
+    'Custom background colour' = @{ zh = '自定义背景颜色'; ja = '背景色をカスタマイズ'; fr = 'Couleur de fond personnalisée'; ko = '배경색 사용자 지정' }
+    'Cloud credit' = @{ zh = '云端赠送额度'; ja = 'クラウド特典'; fr = 'Crédit cloud'; ko = '클라우드 크레딧' }
+    'Credits' = @{ zh = '加购额度'; ja = '追加クレジット'; fr = 'Crédits'; ko = '추가 크레딧' }
+    'Unlimited' = @{ zh = '不限量'; ja = '無制限'; fr = 'Illimité'; ko = '무제한' }
+    'Hue' = @{ zh = '色相'; ja = '色相'; fr = 'Teinte'; ko = '색상' }
+    'Brightness' = @{ zh = '亮度'; ja = '明るさ'; fr = 'Luminosité'; ko = '밝기' }
+    'Presets' = @{ zh = '预设'; ja = 'プリセット'; fr = 'Préréglages'; ko = '프리셋' }
+    'Recent' = @{ zh = '最近使用'; ja = '最近使った色'; fr = 'Récentes'; ko = '최근 사용' }
+    'Cancel' = @{ zh = '取消'; ja = 'キャンセル'; fr = 'Annuler'; ko = '취소' }
+    'Apply' = @{ zh = '应用'; ja = '適用'; fr = 'Appliquer'; ko = '적용' }
+    'Every colour here keeps the text readable.' = @{ zh = '这里的每种颜色都能看清文字。'; ja = 'ここの色はどれも文字が読みやすい明るさです。'; fr = 'Chaque couleur ici garde le texte lisible.'; ko = '여기 있는 색은 모두 글자가 잘 보입니다.' }
 }
 # Single words inside the two-tone stat values ("456 in / 98.9k out").
 $script:I18nWords = @{
@@ -407,6 +418,7 @@ $script:I18nRules = @(
     @{ rx = '^(\d+)h (\d+)m left$'; zh = '剩 $1 小时 $2 分'; ja = '残り $1時間$2分'; fr = 'reste $1 h $2 min'; ko = '$1시간 $2분 남음' },
     @{ rx = '^(\d+)m left$'; zh = '剩 $1 分钟'; ja = '残り $1分'; fr = 'reste $1 min'; ko = '$1분 남음' },
     @{ rx = '^(\d+) available$'; zh = '$1 次可用'; ja = '$1 回利用可'; fr = '$1 disponible(s)'; ko = '$1회 사용 가능' },
+    @{ rx = '^of ([\d,.]+)$'; zh = '共 $1'; ja = '/ $1'; fr = 'sur $1'; ko = '/ $1' },
     @{ rx = '^Version (.+)$'; zh = '版本 $1'; ja = 'バージョン $1'; fr = 'Version $1'; ko = '버전 $1' },
     @{ rx = '^Log in (\S+)$'; zh = '登录 $1'; ja = '$1 にサインイン'; fr = 'Connexion à $1'; ko = '$1 로그인' },
     @{ rx = '^(\S+) not installed$'; zh = '$1 未安装'; ja = '$1 未インストール'; fr = '$1 non installé'; ko = '$1 설치 안 됨' },
@@ -570,16 +582,377 @@ function Set-PanelBackground([string]$Hex) {
     Sync-AppearanceMenus
 }
 
-# Any colour works; very light picks are darkened so the white text stays legible.
-function Invoke-CustomPanelBackground {
-    $dlg = New-Object System.Windows.Forms.ColorDialog
-    $dlg.FullOpen = $true
-    try { $dlg.Color = [System.Drawing.ColorTranslator]::FromHtml((Get-PanelBgHex)) } catch { }
-    if ($dlg.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { return }
-    $r = [double]$dlg.Color.R; $g = [double]$dlg.Color.G; $bl = [double]$dlg.Color.B
+# Custom background colour: a dark picker in the panel's own style. Drag in
+# the square (saturation / brightness) and along the hue strip, type a hex
+# code, or pick a preset or a recent colour. The panel previews every change;
+# Apply keeps it, Cancel / Esc puts the saved colour back. Light picks are
+# darkened so the white text stays readable - the tile shows the real result.
+$script:ColorPicker = $null
+$script:CpH = 0.0; $script:CpS = 0.0; $script:CpV = 0.0
+$script:CpSyncing = $false
+
+function ConvertTo-CpRgb([double]$H, [double]$S, [double]$V) {
+    $h = (($H % 360) + 360) % 360 / 60.0
+    $i = [math]::Floor($h); $f = $h - $i
+    $p = $V * (1 - $S); $q = $V * (1 - $S * $f); $t = $V * (1 - $S * (1 - $f))
+    $rgb = switch ([int]$i) { 0 { $V, $t, $p } 1 { $q, $V, $p } 2 { $p, $V, $t } 3 { $p, $q, $V } 4 { $t, $p, $V } default { $V, $p, $q } }
+    return @([int][math]::Round($rgb[0] * 255), [int][math]::Round($rgb[1] * 255), [int][math]::Round($rgb[2] * 255))
+}
+
+function ConvertFrom-CpHex([string]$Hex) {
+    $c = [System.Drawing.ColorTranslator]::FromHtml($Hex)
+    $r = $c.R / 255.0; $g = $c.G / 255.0; $b = $c.B / 255.0
+    $max = [math]::Max($r, [math]::Max($g, $b)); $min = [math]::Min($r, [math]::Min($g, $b)); $d = $max - $min
+    $h = 0.0
+    if ($d -gt 0) {
+        if ($max -eq $r) { $h = 60 * ((($g - $b) / $d) % 6) }
+        elseif ($max -eq $g) { $h = 60 * ((($b - $r) / $d) + 2) }
+        else { $h = 60 * ((($r - $g) / $d) + 4) }
+    }
+    if ($h -lt 0) { $h += 360 }
+    $s = if ($max -gt 0) { $d / $max } else { 0 }
+    return @($h, $s, $max)
+}
+
+# Same rule as before: cap the luminance so white text stays legible.
+function Get-CpPanelHex([int]$R, [int]$G, [int]$B) {
+    $r = [double]$R; $g = [double]$G; $bl = [double]$B
     $lum = (0.2126 * $r + 0.7152 * $g + 0.0722 * $bl) / 255.0
     if ($lum -gt 0.28) { $k = 0.28 / $lum; $r *= $k; $g *= $k; $bl *= $k }
-    Set-PanelBackground ('#{0:X2}{1:X2}{2:X2}' -f [int]$r, [int]$g, [int]$bl)
+    return ('#{0:X2}{1:X2}{2:X2}' -f [int]$r, [int]$g, [int]$bl)
+}
+
+function Get-CpRecent {
+    $raw = if ($script:Cfg) { [string]$script:Cfg['PanelBgRecent'] } else { '' }
+    return @($raw -split ',' | Where-Object { $_ -match '^#[0-9A-Fa-f]{6}$' } | Select-Object -First 8)
+}
+
+function Add-CpRecent([string]$Hex) {
+    if (-not $script:Cfg) { return }
+    if (@($script:PanelBgPresets.Values) -contains $Hex) { return }
+    $list = @($Hex) + @(Get-CpRecent | Where-Object { $_ -ne $Hex })
+    $script:Cfg['PanelBgRecent'] = (@($list | Select-Object -First 8) -join ',')
+}
+
+# Brightness runs from black to the brightest version of the colour the panel
+# allows (Get-CpPanelHex), so the whole slider changes the result - there is no
+# stretch at the top that gets darkened back to the same colour.
+function Get-CpCap([double]$H, [double]$S) {
+    $top = ConvertTo-CpRgb $H $S 1
+    $lum = (0.2126 * $top[0] + 0.7152 * $top[1] + 0.0722 * $top[2]) / 255.0
+    if ($lum -gt 0.28) { return (0.28 / $lum) }
+    return 1.0
+}
+function Get-CpFinalHex([double]$H, [double]$S, [double]$V) {
+    $rgb = ConvertTo-CpRgb $H $S ([math]::Max(0.0, [math]::Min(1.0, $V)) * (Get-CpCap $H $S))
+    return ('#{0:X2}{1:X2}{2:X2}' -f $rgb[0], $rgb[1], $rgb[2])
+}
+
+# The square shows the colours the panel will really use at each saturation
+# (left to right) and brightness (bottom to top) for the chosen hue.
+$script:CpFieldHue = -1.0
+$script:CpFieldBitmap = $null
+function Update-CpField($w) {
+    if (-not ('JayOSColorField' -as [type])) {
+        Add-Type -TypeDefinition @'
+public static class JayOSColorField {
+    static void Hsv(double h, double s, double v, out double r, out double g, out double b) {
+        h = ((h % 360) + 360) % 360 / 60.0;
+        int i = (int)System.Math.Floor(h); double f = h - i;
+        double p = v * (1 - s), q = v * (1 - s * f), t = v * (1 - s * (1 - f));
+        switch (i) { case 0: r = v; g = t; b = p; break; case 1: r = q; g = v; b = p; break;
+                     case 2: r = p; g = v; b = t; break; case 3: r = p; g = q; b = v; break;
+                     case 4: r = t; g = p; b = v; break; default: r = v; g = p; b = q; break; }
+    }
+    public static byte[] Render(double hue, int w, int h, double maxLum) {
+        byte[] px = new byte[w * h * 4];
+        for (int x = 0; x < w; x++) {
+            double s = (double)x / (w - 1), r1, g1, b1;
+            Hsv(hue, s, 1, out r1, out g1, out b1);
+            double lum = 0.2126 * r1 + 0.7152 * g1 + 0.0722 * b1;
+            double cap = lum > maxLum ? maxLum / lum : 1.0;
+            for (int y = 0; y < h; y++) {
+                double k = (1.0 - (double)y / (h - 1)) * cap;
+                int o = (y * w + x) * 4;
+                px[o] = (byte)System.Math.Round(b1 * k * 255); px[o + 1] = (byte)System.Math.Round(g1 * k * 255);
+                px[o + 2] = (byte)System.Math.Round(r1 * k * 255); px[o + 3] = 255;
+            }
+        }
+        return px;
+    }
+}
+'@
+    }
+    $fw = 274; $fh = 160
+    if (-not $script:CpFieldBitmap) {
+        $script:CpFieldBitmap = New-Object System.Windows.Media.Imaging.WriteableBitmap($fw, $fh, 96, 96, [System.Windows.Media.PixelFormats]::Bgra32, $null)
+    }
+    $px = [JayOSColorField]::Render($script:CpH, $fw, $fh, 0.28)
+    $script:CpFieldBitmap.WritePixels((New-Object System.Windows.Int32Rect(0, 0, $fw, $fh)), $px, $fw * 4, 0)
+    $w.FindName('cpSvImage').Source = $script:CpFieldBitmap
+}
+
+function Update-ColorPicker([switch]$FromHex) {
+    $w = $script:ColorPicker
+    if (-not $w) { return }
+    $rgb = ConvertTo-CpRgb $script:CpH $script:CpS $script:CpV
+    $pick = '#{0:X2}{1:X2}{2:X2}' -f $rgb[0], $rgb[1], $rgb[2]
+    $final = Get-CpFinalHex $script:CpH $script:CpS $script:CpV
+    $brightest = Get-CpFinalHex $script:CpH $script:CpS 1
+    $w.FindName('cpBriTrack').Background = New-GradientBrush '#000000' $brightest
+    $bt = $w.FindName('cpBri')
+    $bth = $w.FindName('cpBriThumb')
+    [System.Windows.Controls.Canvas]::SetLeft($bth, $script:CpV * $bt.Width - 8)
+    $bth.Fill = NewBrush $final
+    $w.FindName('cpBriValue').Text = ('{0:0}%' -f ($script:CpV * 100))
+    $hue = ConvertTo-CpRgb $script:CpH 1 1
+    if ($script:CpFieldHue -ne $script:CpH) { Update-CpField $w; $script:CpFieldHue = $script:CpH }
+    $sv = $w.FindName('cpSv'); $ht = $w.FindName('cpHue')
+    $th = $w.FindName('cpSvThumb'); $hth = $w.FindName('cpHueThumb')
+    [System.Windows.Controls.Canvas]::SetLeft($th, $script:CpS * $sv.Width - 8)
+    [System.Windows.Controls.Canvas]::SetTop($th, (1 - $script:CpV) * $sv.Height - 8)
+    $th.Fill = NewBrush $final
+    [System.Windows.Controls.Canvas]::SetLeft($hth, $script:CpH / 360.0 * $ht.Width - 8)
+    $hth.Fill = NewBrush ('#{0:X2}{1:X2}{2:X2}' -f $hue[0], $hue[1], $hue[2])
+    # The tile shows the panel as it will look: black at the top, then the colour.
+    $tile = New-Object System.Windows.Media.LinearGradientBrush
+    $tile.StartPoint = [System.Windows.Point]::new(0, 0); $tile.EndPoint = [System.Windows.Point]::new(0, 1)
+    $fc = [System.Windows.Media.ColorConverter]::ConvertFromString($final)
+    [void]$tile.GradientStops.Add((New-Object System.Windows.Media.GradientStop([System.Windows.Media.Colors]::Black, 0.0)))
+    [void]$tile.GradientStops.Add((New-Object System.Windows.Media.GradientStop($fc, 0.45)))
+    [void]$tile.GradientStops.Add((New-Object System.Windows.Media.GradientStop($fc, 1.0)))
+    $w.FindName('cpTile').Background = $tile
+    if (-not $FromHex) {
+        $script:CpSyncing = $true
+        $box = $w.FindName('cpHex'); $box.Text = $final; $box.CaretIndex = $box.Text.Length
+        $script:CpSyncing = $false
+    }
+    $script:CpFinal = $final
+    try { Set-NotchBackdropColor $final } catch { }
+}
+
+function Set-CpFromHex([string]$Hex, [switch]$FromHex) {
+    if ($Hex -notmatch '^#?[0-9A-Fa-f]{6}$') { return }
+    if (-not $Hex.StartsWith('#')) { $Hex = '#' + $Hex }
+    $hsv = ConvertFrom-CpHex $Hex
+    $script:CpH = $hsv[0]; $script:CpS = $hsv[1]
+    # Where this colour sits on the brightness slider (too bright: the top).
+    $script:CpV = [math]::Min(1.0, $hsv[2] / (Get-CpCap $hsv[0] $hsv[1]))
+    Update-ColorPicker -FromHex:$FromHex
+}
+
+function Close-ColorPicker([switch]$Apply) {
+    $w = $script:ColorPicker
+    if (-not $w) { return }
+    $script:ColorPicker = $null
+    if ($Apply -and $script:CpFinal) {
+        Add-CpRecent $script:CpFinal
+        Set-PanelBackground $script:CpFinal
+    } else {
+        try { Set-NotchBackdropColor (Get-PanelBgHex) } catch { }
+    }
+    try { $w.Close() } catch { }
+}
+
+function New-CpSwatch([string]$Hex, [string]$Tip) {
+    $b = New-Object System.Windows.Controls.Border
+    $b.Width = 26; $b.Height = 26; $b.CornerRadius = 7; $b.Margin = '0,0,8,8'
+    $b.Cursor = [System.Windows.Input.Cursors]::Hand
+    $c = [System.Drawing.ColorTranslator]::FromHtml($Hex)
+    $lift = '#{0:X2}{1:X2}{2:X2}' -f [math]::Min(255, [int]($c.R * 1.6 + 6)), [math]::Min(255, [int]($c.G * 1.6 + 6)), [math]::Min(255, [int]($c.B * 1.6 + 6))
+    $g = New-Object System.Windows.Media.LinearGradientBrush
+    $g.StartPoint = [System.Windows.Point]::new(0, 0); $g.EndPoint = [System.Windows.Point]::new(0, 1)
+    [void]$g.GradientStops.Add((New-Object System.Windows.Media.GradientStop([System.Windows.Media.ColorConverter]::ConvertFromString($Hex), 0.0)))
+    [void]$g.GradientStops.Add((New-Object System.Windows.Media.GradientStop([System.Windows.Media.ColorConverter]::ConvertFromString($lift), 1.0)))
+    $b.Background = $g
+    $b.BorderBrush = NewBrush '#55FFFFFF'; $b.BorderThickness = 1
+    $b.ToolTip = $Tip
+    $b.Tag = $Hex
+    $b.add_MouseLeftButtonUp({ param($s, $e) Set-CpFromHex ([string]$s.Tag) })
+    $b.add_MouseEnter({ param($s, $e) $s.BorderBrush = NewBrush '#F5F5F7' })
+    $b.add_MouseLeave({ param($s, $e) $s.BorderBrush = NewBrush '#55FFFFFF' })
+    return $b
+}
+
+function Invoke-CpPick($Sender, $E, [string]$Kind) {
+    $p = $E.GetPosition($Sender)
+    if ($Kind -eq 'sv') {
+        $script:CpS = [math]::Max(0.0, [math]::Min(1.0, $p.X / $Sender.Width))
+        $script:CpV = [math]::Max(0.0, [math]::Min(1.0, 1 - $p.Y / $Sender.Height))
+    } elseif ($Kind -eq 'bri') {
+        $script:CpV = [math]::Max(0.0, [math]::Min(1.0, $p.X / $Sender.Width))
+    } else {
+        $script:CpH = [math]::Max(0.0, [math]::Min(359.9, $p.X / $Sender.Width * 360.0))
+    }
+    Update-ColorPicker
+}
+
+function Get-CpText([string]$Text) {
+    try { return (Convert-I18nString $Text (Get-UiLanguage)) } catch { return $Text }
+}
+
+function Invoke-CustomPanelBackground {
+    if ($script:ColorPicker) { try { $script:ColorPicker.Activate() } catch { }; return }
+    $xaml = @"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent" ResizeMode="NoResize"
+        SizeToContent="WidthAndHeight" Topmost="True" ShowInTaskbar="False" FontFamily="Segoe UI">
+  <Border Margin="14" Padding="18,14,18,16" CornerRadius="16" Background="#F21C1C1F" BorderBrush="#3A3A3D" BorderThickness="1">
+    <Border.Effect><DropShadowEffect BlurRadius="24" ShadowDepth="4" Opacity="0.55" Color="#000000"/></Border.Effect>
+    <StackPanel Width="276">
+      <DockPanel x:Name="cpTitleRow" Background="Transparent" Margin="0,0,0,12">
+        <Border x:Name="cpClose" DockPanel.Dock="Right" Width="22" Height="22" CornerRadius="11" Background="#2C2C2E" Cursor="Hand">
+          <TextBlock Text="&#x2715;" FontSize="10" Foreground="#A1A1A6" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        </Border>
+        <TextBlock x:Name="cpTitle" FontSize="14" FontWeight="SemiBold" Foreground="#F5F5F7" VerticalAlignment="Center"/>
+      </DockPanel>
+      <Border CornerRadius="10" ClipToBounds="True" BorderBrush="#33FFFFFF" BorderThickness="1">
+        <Grid x:Name="cpSvHost" Width="274" Height="160" Cursor="Cross" Background="Transparent">
+          <Grid.Clip><RectangleGeometry Rect="0,0,274,160" RadiusX="9" RadiusY="9"/></Grid.Clip>
+          <Image x:Name="cpSvImage" Stretch="Fill"/>
+          <Canvas x:Name="cpSv" Width="274" Height="160" Background="Transparent">
+            <Ellipse x:Name="cpSvThumb" Width="16" Height="16" Stroke="#FFFFFF" StrokeThickness="2.5" IsHitTestVisible="False">
+              <Ellipse.Effect><DropShadowEffect BlurRadius="4" ShadowDepth="0" Opacity="0.8"/></Ellipse.Effect>
+            </Ellipse>
+          </Canvas>
+        </Grid>
+      </Border>
+      <TextBlock x:Name="cpHueLabel" Margin="0,14,0,6" FontSize="11" FontWeight="SemiBold" Foreground="#8E8E93"/>
+      <Grid Height="16" Cursor="Hand">
+        <Border CornerRadius="6" Height="12" VerticalAlignment="Center">
+          <Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Color="#FF0000" Offset="0"/><GradientStop Color="#FFFF00" Offset="0.1667"/><GradientStop Color="#00FF00" Offset="0.3333"/>
+            <GradientStop Color="#00FFFF" Offset="0.5"/><GradientStop Color="#0000FF" Offset="0.6667"/><GradientStop Color="#FF00FF" Offset="0.8333"/><GradientStop Color="#FF0000" Offset="1"/>
+          </LinearGradientBrush></Border.Background>
+        </Border>
+        <Canvas x:Name="cpHue" Width="274" Height="16" Background="Transparent">
+          <Ellipse x:Name="cpHueThumb" Width="16" Height="16" Stroke="#FFFFFF" StrokeThickness="2.5" IsHitTestVisible="False">
+            <Ellipse.Effect><DropShadowEffect BlurRadius="4" ShadowDepth="0" Opacity="0.8"/></Ellipse.Effect>
+          </Ellipse>
+        </Canvas>
+      </Grid>
+      <DockPanel Margin="0,12,0,6">
+        <TextBlock x:Name="cpBriValue" DockPanel.Dock="Right" FontSize="11" FontWeight="SemiBold" Foreground="#C7C7CC"/>
+        <TextBlock x:Name="cpBriLabel" FontSize="11" FontWeight="SemiBold" Foreground="#8E8E93"/>
+      </DockPanel>
+      <Grid Height="16" Cursor="Hand">
+        <Border x:Name="cpBriTrack" CornerRadius="6" Height="12" VerticalAlignment="Center" BorderBrush="#33FFFFFF" BorderThickness="1"/>
+        <Canvas x:Name="cpBri" Width="274" Height="16" Background="Transparent">
+          <Ellipse x:Name="cpBriThumb" Width="16" Height="16" Stroke="#FFFFFF" StrokeThickness="2.5" IsHitTestVisible="False">
+            <Ellipse.Effect><DropShadowEffect BlurRadius="4" ShadowDepth="0" Opacity="0.8"/></Ellipse.Effect>
+          </Ellipse>
+        </Canvas>
+      </Grid>
+      <Grid Margin="0,16,0,0">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Border x:Name="cpTile" Width="54" Height="54" CornerRadius="12" BorderBrush="#44FFFFFF" BorderThickness="1"/>
+        <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+          <Border CornerRadius="8" Background="#2C2C2E" BorderBrush="#3A3A3D" BorderThickness="1" Padding="8,3">
+            <DockPanel>
+              <TextBox x:Name="cpHex" Background="Transparent" BorderThickness="0" Foreground="#F5F5F7" CaretBrush="#F5F5F7"
+                       FontFamily="Consolas" FontSize="13" MaxLength="7" VerticalContentAlignment="Center"/>
+            </DockPanel>
+          </Border>
+          <TextBlock x:Name="cpHint" Margin="2,6,0,0" FontSize="11" Foreground="#8E8E93" TextWrapping="Wrap"/>
+        </StackPanel>
+      </Grid>
+      <TextBlock x:Name="cpPresetsLabel" Margin="0,16,0,8" FontSize="11" FontWeight="SemiBold" Foreground="#8E8E93"/>
+      <WrapPanel x:Name="cpPresets"/>
+      <TextBlock x:Name="cpRecentLabel" Margin="0,6,0,8" FontSize="11" FontWeight="SemiBold" Foreground="#8E8E93"/>
+      <WrapPanel x:Name="cpRecent"/>
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+        <Border x:Name="cpCancel" CornerRadius="9" Background="#2C2C2E" Padding="16,7" Margin="0,0,8,0" Cursor="Hand">
+          <TextBlock x:Name="cpCancelText" FontSize="12.5" Foreground="#F5F5F7" FontWeight="SemiBold"/>
+        </Border>
+        <Border x:Name="cpApply" CornerRadius="9" Background="#0A84FF" Padding="18,7" Cursor="Hand">
+          <TextBlock x:Name="cpApplyText" FontSize="12.5" Foreground="#FFFFFF" FontWeight="SemiBold"/>
+        </Border>
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</Window>
+"@
+    $w = [System.Windows.Markup.XamlReader]::Parse($xaml)
+    $script:ColorPicker = $w
+    $script:CpFieldHue = -1.0; $script:CpFieldBitmap = $null
+    $w.FindName('cpTitle').Text = Get-CpText 'Custom background colour'
+    $w.FindName('cpPresetsLabel').Text = Get-CpText 'Presets'
+    $w.FindName('cpHueLabel').Text = Get-CpText 'Hue'
+    $w.FindName('cpBriLabel').Text = Get-CpText 'Brightness'
+    $w.FindName('cpRecentLabel').Text = Get-CpText 'Recent'
+    $w.FindName('cpCancelText').Text = Get-CpText 'Cancel'
+    $w.FindName('cpApplyText').Text = Get-CpText 'Apply'
+    $w.FindName('cpHint').Text = Get-CpText 'Every colour here keeps the text readable.'
+
+    foreach ($pair in $script:PanelBgPresets.GetEnumerator()) {
+        [void]$w.FindName('cpPresets').Children.Add((New-CpSwatch ([string]$pair.Value) (Get-CpText ([string]$pair.Key))))
+    }
+    $recent = @(Get-CpRecent)
+    foreach ($hex in $recent) { [void]$w.FindName('cpRecent').Children.Add((New-CpSwatch $hex $hex)) }
+    if ($recent.Count -eq 0) {
+        $w.FindName('cpRecentLabel').Visibility = 'Collapsed'; $w.FindName('cpRecent').Visibility = 'Collapsed'
+    }
+
+    # Dragging in the square and along the hue strip.
+    $sv = $w.FindName('cpSv'); $hue = $w.FindName('cpHue')
+    $sv.add_MouseLeftButtonDown({ param($s, $e) [void]$s.CaptureMouse(); Invoke-CpPick $s $e 'sv' })
+    $sv.add_MouseMove({ param($s, $e) if ($s.IsMouseCaptured) { Invoke-CpPick $s $e 'sv' } })
+    $sv.add_MouseLeftButtonUp({ param($s, $e) $s.ReleaseMouseCapture() })
+    $hue.add_MouseLeftButtonDown({ param($s, $e) [void]$s.CaptureMouse(); Invoke-CpPick $s $e 'hue' })
+    $hue.add_MouseMove({ param($s, $e) if ($s.IsMouseCaptured) { Invoke-CpPick $s $e 'hue' } })
+    $hue.add_MouseLeftButtonUp({ param($s, $e) $s.ReleaseMouseCapture() })
+    $bri = $w.FindName('cpBri')
+    $bri.add_MouseLeftButtonDown({ param($s, $e) [void]$s.CaptureMouse(); Invoke-CpPick $s $e 'bri' })
+    $bri.add_MouseMove({ param($s, $e) if ($s.IsMouseCaptured) { Invoke-CpPick $s $e 'bri' } })
+    $bri.add_MouseLeftButtonUp({ param($s, $e) $s.ReleaseMouseCapture() })
+    # The mouse wheel nudges brightness anywhere on the picker's colour area.
+    $w.add_MouseWheel({
+        param($s, $e)
+        $script:CpV = [math]::Max(0.0, [math]::Min(1.0, $script:CpV + [math]::Sign($e.Delta) * 0.02))
+        Update-ColorPicker
+    })
+    $w.FindName('cpHex').add_TextChanged({
+        if ($script:CpSyncing) { return }
+        $t = [string]$script:ColorPicker.FindName('cpHex').Text
+        if ($t -match '^#?[0-9A-Fa-f]{6}$') { Set-CpFromHex $t -FromHex }
+    })
+    $w.FindName('cpTitleRow').add_MouseLeftButtonDown({ try { $script:ColorPicker.DragMove() } catch { } })
+    # Down, not up: the title row would start a drag first.
+    $w.FindName('cpClose').add_MouseLeftButtonDown({ param($s, $e) $e.Handled = $true; Close-ColorPicker })
+    $w.FindName('cpCancel').add_MouseLeftButtonUp({ Close-ColorPicker })
+    $w.FindName('cpApply').add_MouseLeftButtonUp({ Close-ColorPicker -Apply })
+    foreach ($n in 'cpCancel', 'cpApply', 'cpClose') {
+        $btn = $w.FindName($n)
+        $btn.add_MouseEnter({ param($s, $e) $s.Opacity = 0.85 })
+        $btn.add_MouseLeave({ param($s, $e) $s.Opacity = 1.0 })
+    }
+    $w.add_KeyDown({
+        param($s, $e)
+        if ($e.Key -eq 'Escape') { Close-ColorPicker; $e.Handled = $true }
+        elseif ($e.Key -eq 'Return') { Close-ColorPicker -Apply; $e.Handled = $true }
+    })
+    $w.add_Closed({ if ($script:ColorPicker) { $script:ColorPicker = $null; try { Set-NotchBackdropColor (Get-PanelBgHex) } catch { } } })
+
+    # Beside the panel when there is room, otherwise centred on its screen.
+    $w.WindowStartupLocation = 'Manual'
+    $area = [System.Windows.SystemParameters]::WorkArea
+    $pw = 332; $ph = 560
+    $left = $area.Left + ($area.Width - $pw) / 2; $top = $area.Top + 90
+    try {
+        $mw = $script:window
+        if ($mw -and $mw.IsVisible) {
+            $right = $mw.Left + $mw.ActualWidth + 4
+            $left = if ($right + $pw -le $area.Right) { $right } elseif ($mw.Left - $pw - 4 -ge $area.Left) { $mw.Left - $pw - 4 } else { $left }
+            $top = [math]::Max($area.Top, [math]::Min($mw.Top, $area.Bottom - $ph))
+        }
+    } catch { }
+    $w.Left = $left; $w.Top = $top
+
+    Set-CpFromHex (Get-PanelBgHex)
+    $w.Show()
+    [void]$w.Activate()
+    [void]$w.FindName('cpHex').Focus()
 }
 
 function New-RoundRectPath([single]$X, [single]$Y, [single]$W, [single]$H, [single]$R) {
@@ -1451,6 +1824,8 @@ function Assert-NotchTopmost([switch]$Force) {
         }
         # HWND_TOPMOST, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
         [void][AIUsageIslandNative]::SetWindowPos($hwnd, [IntPtr](-1), 0, 0, 0, 0, 0x0013)
+        # An AI request card grows out of the notch and must stay above it.
+        if (($script:ReqCards -and $script:ReqCards.Count -gt 0) -or ($script:ReqClosing -and $script:ReqClosing.Count -gt 0)) { try { Set-RequestCardsOnTop } catch { } }
     }
 }
 
@@ -2295,6 +2670,8 @@ function Invoke-NotchHoverPoll {
         if (Test-NotchMenuOpen) { Close-NotchMenusOnOutsideClick }
         $state = $script:NotchState
         if ($state -eq 'EXPANDED') { Invoke-NotchPanelLeavePoll; return }
+        # While an AI request card is out of the notch, the notch stays put.
+        if (($script:ReqCards -and $script:ReqCards.Count -gt 0) -or ($script:ReqClosing -and $script:ReqClosing.Count -gt 0)) { return }
         if ($state -ne 'EDGE' -and $state -ne 'NOTCH' -and $state -ne 'EDGE_RETURN') { return }
 
         $pt = Get-NotchCursorLocal
@@ -2391,6 +2768,8 @@ function Invoke-NotchPanelLeavePoll {
         Close-NotchMenusOnOutsideClick
         $script:NotchPanelLeaveMs = 0.0; $script:NotchMenuGraceMs = 700.0; return
     }
+    # The colour picker previews on the panel: keep it open meanwhile.
+    if ($script:ColorPicker) { $script:NotchPanelLeaveMs = 0.0; $script:NotchMenuGraceMs = 700.0; return }
     if ([System.Windows.Forms.Control]::MouseButtons -ne [System.Windows.Forms.MouseButtons]::None) { $script:NotchPanelLeaveMs = 0.0; return }
 
     $pt = Get-NotchCursorLocal
@@ -2733,6 +3112,8 @@ function Invoke-ManualRefresh {
         $script:State.Status = 'refreshing'
         $script:State.Message = 'refreshing...'
     }
+    # Every card reads "Syncing" until its own data is back, not only Claude's.
+    $script:ManualSyncKinds = @('ClaudeUsage', 'CodexStats', 'GrokUsage')
 
     if (Get-Command Clear-ProviderVersionCache -ErrorAction SilentlyContinue) { Clear-ProviderVersionCache }
     Start-AllRefreshJobs -Force
@@ -3269,7 +3650,7 @@ $miBrand = New-StripItem 'Brand' $null
 [void]$script:ctxStrip.Items.Add($miBrand)
 
 # Version (shown under System)
-$script:DisplayVersion = '0.0.2 beta'
+$script:DisplayVersion = '0.0.3 beta'
 $script:miUpdate = New-StripItem 'Check for updates' { Invoke-UpdateButton }
 [void]$script:ctxStrip.Items.Add($script:miUpdate)
 $miVersion = New-StripItem ("Version {0}" -f $script:DisplayVersion) $null
@@ -3456,17 +3837,8 @@ foreach ($pair in @(@('100%',1.0), @('80%',0.8), @('60%',0.6), @('40%',0.4))) {
 }
 [void]$script:ctxStrip.Items.Add($miOp)
 
-# Themes
-$miTheme = New-StripItem 'Theme' $null
-foreach ($tname in $script:Themes.Keys) {
-    $tn  = $tname
-    $sub = New-StripItem $tname ([scriptblock]::Create("`$script:Cfg.Theme='$tn'; if (`$script:ThemePreviewShown -ne '$tn') { Apply-UnifiedTheme '$tn'; try { Update-AllSections } catch { } }; `$script:ThemePreviewShown='$tn'; Save-UnifiedState; foreach(`$x in `$script:themeItems.Values){`$x.Checked=`$false}; `$script:themeItems['$tn'].Checked=`$true"))
-    $sub.CheckOnClick = $false
-    $sub.Checked = ($tname -eq $script:Cfg.Theme)
-    $script:themeItems[$tname] = $sub
-    [void]$miTheme.DropDownItems.Add($sub)
-}
-[void]$script:ctxStrip.Items.Add($miTheme)
+# Themes are no longer offered in Settings (meters follow usage on every
+# theme); the saved theme still sets the panel colours.
 
 # Panel background
 $script:bgItems = [ordered]@{}
@@ -3540,6 +3912,59 @@ $script:miNotchPin = New-StripItem 'Pin button on notch' {
 }
 $script:miNotchPin.Checked = $true
 [void]$script:ctxStrip.Items.Add($script:miNotchPin)
+
+$script:miAiRequests = New-StripItem 'AI requests in the notch' {
+    Set-AiRequestsEnabled (-not (Test-AiRequestsEnabled))
+    $script:miAiRequests.Checked = (Test-AiRequestsEnabled)
+}
+$script:miAiRequests.Checked = $false
+[void]$script:ctxStrip.Items.Add($script:miAiRequests)
+
+# Notices from the notch: a task finished; the agent waits for you in its own
+# terminal prompt (permission dialog, input).
+$script:miAiNotifyDone = New-StripItem 'Notify when a task finishes' {
+    $script:Cfg['AiNotifyDone'] = -not [bool]$script:Cfg['AiNotifyDone']
+    Save-UnifiedState
+    $script:miAiNotifyDone.Checked = [bool]$script:Cfg['AiNotifyDone']
+}
+$script:miAiNotifyDone.Checked = $true
+[void]$script:ctxStrip.Items.Add($script:miAiNotifyDone)
+$script:miAiNotifyAttention = New-StripItem 'Notify when the AI needs you' {
+    $script:Cfg['AiNotifyAttention'] = -not [bool]$script:Cfg['AiNotifyAttention']
+    Save-UnifiedState
+    $script:miAiNotifyAttention.Checked = [bool]$script:Cfg['AiNotifyAttention']
+}
+$script:miAiNotifyAttention.Checked = $true
+[void]$script:ctxStrip.Items.Add($script:miAiNotifyAttention)
+
+# Renew an expired Claude sign-in by running Claude Code hidden (one tiny
+# Haiku reply, at most every 30 minutes). Off: an expired sign-in just asks
+# you to sign in again. The setting is a marker file (Data.ps1).
+$script:miClaudeRenew = New-StripItem 'Renew Claude sign-in automatically' {
+    try { Set-ClaudeCliRenewalEnabled (-not (Test-ClaudeCliRenewalEnabled)) } catch { }
+    try { $script:miClaudeRenew.Checked = (Test-ClaudeCliRenewalEnabled) } catch { }
+}
+$script:miClaudeRenew.Checked = $true
+$script:miClaudeRenew.ToolTipText = 'Runs Claude Code in the background with a one-line Haiku prompt when the sign-in has expired (at most every 30 minutes).'
+[void]$script:ctxStrip.Items.Add($script:miClaudeRenew)
+
+# How long an unanswered AI request card waits before it chimes again.
+$script:aiRemindItems = [ordered]@{}
+function Sync-AiRemindItems {
+    $cur = 25
+    try { if ($null -ne $script:Cfg['AiRequestRemind']) { $cur = [int]$script:Cfg['AiRequestRemind'] } } catch { }
+    foreach ($k in @($script:aiRemindItems.Keys)) { $script:aiRemindItems[$k].Checked = ([int]$k -eq $cur) }
+}
+$script:miAiRemind = New-StripItem 'Remind again if unanswered' $null
+foreach ($pair in @(@('Off', 0), @('10 s', 10), @('25 s', 25), @('45 s', 45), @('60 s', 60))) {
+    $val = [int]$pair[1]
+    $sub = New-StripItem $pair[0] ([scriptblock]::Create("`$script:Cfg['AiRequestRemind'] = $val; Save-UnifiedState; Sync-AiRemindItems"))
+    $sub.CheckOnClick = $false
+    $script:aiRemindItems[[string]$val] = $sub
+    [void]$script:miAiRemind.DropDownItems.Add($sub)
+}
+Sync-AiRemindItems
+[void]$script:ctxStrip.Items.Add($script:miAiRemind)
 Add-Separator
 
 # Login
@@ -3694,12 +4119,14 @@ Add-Separator
             @('Providers', 'IcoDatabase'), @('Log in', 'IcoPerson')) },
         @{ Title = 'Appearance & Layout'; Icon = 'IcoPalette'; Items = @(
             @('View', 'IcoWindow'), @('Hotkeys', 'IcoKeyboard'), @('Snap to corner', 'IcoCorner'),
-            @('Opacity', 'IcoDrop'), @('Theme', 'IcoPalette'), @('Background', 'IcoSwatch'),
+            @('Opacity', 'IcoDrop'), @('Background', 'IcoSwatch'),
             @('Language', 'IcoGlobe')) },
         @{ Title = 'Panels & Features'; Icon = 'IcoSliders'; Toggle = $true; Items = @(
             @('Show stats panel', 'IcoBars'), @('Compact mode', 'IcoList'),
             @('Threshold alerts', 'IcoBell'), @('Show history graph', 'IcoTrend'),
-            @('Pin button on notch', 'IcoPin')) },
+            @('Pin button on notch', 'IcoPin'), @('AI requests in the notch', 'IcoChat'),
+            @('Notify when a task finishes', 'IcoBell'), @('Notify when the AI needs you', 'IcoBell'),
+            @('Remind again if unanswered', 'IcoBell'), @('Renew Claude sign-in automatically', 'IcoPower')) },
         @{ Title = 'System'; Icon = 'IcoPower'; Items = @(
             @('Open at login', 'IcoPower', $true), @('Start hidden to tray', 'IcoEyeOff', $true),
             @('Minimize to tray', 'IcoMinus'), @('Check for updates', 'IcoDownload'),
@@ -3739,7 +4166,8 @@ Add-Separator
             if (-not $item) { continue }
             try { $item.Image = New-MenuIcon $iconData[$spec[1]] } catch { }
             $item.Padding = New-Object System.Windows.Forms.Padding(0, 3, 0, 3)
-            if ($grp.Toggle -or ($spec.Count -gt 2 -and $spec[2])) {
+            # A row with its own submenu (a list of choices) is never a switch.
+            if (($grp.Toggle -and -not $item.HasDropDownItems) -or ($spec.Count -gt 2 -and $spec[2])) {
                 $item.Tag = 'toggle'
                 $item.CheckOnClick = $false
                 # Reserve room on the right for the switch.
@@ -3787,10 +4215,11 @@ Add-Separator
     $script:MenuToggleKeys = @{
         'Show stats panel' = 'ShowStats'; 'Compact mode' = 'Compact'; 'Threshold alerts' = 'ShowAlerts'
         'Show history graph' = 'ShowGraph'; 'Start hidden to tray' = 'StartHidden'
-        'Pin button on notch' = 'NotchPinButton'
+        'Pin button on notch' = 'NotchPinButton'; 'AI requests in the notch' = 'AiRequests'
+        'Notify when a task finishes' = 'AiNotifyDone'; 'Notify when the AI needs you' = 'AiNotifyAttention'
     }
     $script:MenuToggleItems = @{}
-    foreach ($k in @($script:MenuToggleKeys.Keys) + @('Open at login')) {
+    foreach ($k in @($script:MenuToggleKeys.Keys) + @('Open at login', 'Renew Claude sign-in automatically')) {
         if ($byText.ContainsKey($k)) { $script:MenuToggleItems[$k] = $byText[$k] }
     }
 
@@ -3807,7 +4236,7 @@ Add-Separator
             if (-not $isSkip) { $it.Tag = 'option' }
         }
     }
-    foreach ($name in @('View', 'Hotkeys', 'Snap to corner', 'Opacity', 'Theme', 'Background', 'Language')) {
+    foreach ($name in @('View', 'Hotkeys', 'Snap to corner', 'Opacity', 'Theme', 'Background', 'Language', 'Remind again if unanswered')) {
         if ($byText[$name]) { Set-MenuOptionTags $byText[$name].DropDownItems }
     }
 
@@ -3837,7 +4266,9 @@ function Sync-MenuToggleStates {
     if (-not $script:Cfg) { return }
     foreach ($k in @($script:MenuToggleItems.Keys)) {
         $item = $script:MenuToggleItems[$k]
-        if ($k -eq 'Open at login') {
+        if ($k -eq 'Renew Claude sign-in automatically') {
+            try { $item.Checked = [bool](Test-ClaudeCliRenewalEnabled) } catch { }
+        } elseif ($k -eq 'Open at login') {
             if (Get-Command Test-Autostart -ErrorAction SilentlyContinue) { $item.Checked = [bool](Test-Autostart) }
         } else {
             $item.Checked = [bool]$script:Cfg[$script:MenuToggleKeys[$k]]
@@ -3845,6 +4276,7 @@ function Sync-MenuToggleStates {
     }
     Sync-SectionMenuItems
     Sync-IslandMenuItem
+    try { Sync-AiRemindItems } catch { }
 }
 $script:ctxStrip.add_Opening({ try { Sync-MenuToggleStates } catch { } })
 $script:ctxStrip.add_Opening({ try { Sync-AppearanceMenus; Invoke-MenuTranslate $script:ctxStrip.Items } catch { } })

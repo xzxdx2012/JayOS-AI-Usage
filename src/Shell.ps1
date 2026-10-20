@@ -452,7 +452,7 @@ $xaml = @'
                     </Canvas>
                   </StackPanel>
                 </StackPanel>
-                <StackPanel Margin="0,0,0,9" Visibility="Visible">
+                <StackPanel x:Name="fabRow" Margin="0,0,0,9" Visibility="Collapsed">
                   <Grid>
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="24"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto" MinWidth="72"/>
@@ -485,6 +485,20 @@ $xaml = @'
                     </Border>
                   </Border>
                   <TextBlock x:Name="opusSub" Visibility="Collapsed" Text="used" Foreground="#7C7C82" FontSize="10.5" FontFamily="Segoe UI" Margin="24,3,0,0"/>
+                </StackPanel>
+                <StackPanel x:Name="cloudCreditRow" Margin="0,0,0,9" Visibility="Collapsed">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="24"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto" MinWidth="72"/>
+                    </Grid.ColumnDefinitions>
+                    <Path x:Name="cloudCreditIcon" Grid.Column="0" Data="{StaticResource IcoDollar}" Style="{StaticResource RowIcon}"/>
+                    <TextBlock x:Name="cloudCreditLabel" Grid.Column="1" Text="Cloud credit" Style="{StaticResource RowLabel}"/>
+                    <TextBlock x:Name="cloudCreditPct" Grid.Column="3" Text="--" Style="{StaticResource RowPct}"/>
+                    <TextBlock x:Name="cloudCreditReset" Grid.Column="4" Text="" Style="{StaticResource RowSub}"/>
+                  </Grid>
+                  <Border Tag="track" Height="5" CornerRadius="2.5" Background="#1CFFFFFF" Width="200" HorizontalAlignment="Left" Margin="24,6,0,0">
+                    <Border x:Name="cloudCreditBar" Height="5" CornerRadius="2.5" HorizontalAlignment="Left" Width="0"/>
+                  </Border>
                 </StackPanel>
              </StackPanel>
              <Border x:Name="statsPanel" Grid.Column="1" Width="196" BorderBrush="#16FFFFFF" BorderThickness="1,0,0,0" Padding="13,1,0,0">
@@ -569,7 +583,7 @@ $xaml = @'
                 <Polyline x:Name="weekSparkC" Stroke="#FB923C" StrokeThickness="1.5" StrokeLineJoin="Round"/>
               </Canvas>
             </StackPanel>
-            <Grid Margin="0,0,0,8">
+            <Grid x:Name="fabRowC" Visibility="Collapsed" Margin="0,0,0,8">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="58"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
               </Grid.ColumnDefinitions>
@@ -693,6 +707,20 @@ $xaml = @'
                       <Polyline x:Name="codexWeekSpark" Stroke="#FB923C" StrokeThickness="1.5" StrokeLineJoin="Round"/>
                     </Canvas>
                   </StackPanel>
+                </StackPanel>
+                <StackPanel x:Name="codexCreditRow" Margin="0,0,0,9" Visibility="Collapsed">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="24"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto" MinWidth="72"/>
+                    </Grid.ColumnDefinitions>
+                    <Path x:Name="codexCreditIcon" Grid.Column="0" Data="{StaticResource IcoDollar}" Style="{StaticResource RowIcon}"/>
+                    <TextBlock x:Name="codexCreditLabel" Grid.Column="1" Text="Credits" Style="{StaticResource RowLabel}"/>
+                    <TextBlock x:Name="codexCreditPct" Grid.Column="3" Text="--" Style="{StaticResource RowPct}"/>
+                    <TextBlock x:Name="codexCreditSub" Grid.Column="4" Text="" Style="{StaticResource RowSub}"/>
+                  </Grid>
+                  <Border Tag="track" Height="5" CornerRadius="2.5" Background="#1CFFFFFF" Width="200" HorizontalAlignment="Left" Margin="24,6,0,0">
+                    <Border x:Name="codexCreditBar" Height="5" CornerRadius="2.5" HorizontalAlignment="Left" Width="0"/>
+                  </Border>
                 </StackPanel>
                 <Grid x:Name="codexResetsRow" Margin="0,0,0,9">
                   <Grid.ColumnDefinitions><ColumnDefinition Width="24"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
@@ -1106,9 +1134,33 @@ function Get-UsageBandColor($util) {
     return '#30D158'
 }
 
-function Test-ThemeStateBars {
-    $t = if ($script:Cfg -and $script:Themes) { $script:Themes[[string]$script:Cfg.Theme] } else { $null }
-    return [bool]($t -and $t.StateBars)
+# Every theme colours its meters by usage, the same as the notch readout.
+function Test-ThemeStateBars { return $true }
+
+# A meter fill that runs through the usage colours: green at 0 %, yellow at
+# 60 %, red from 85 %. The stops are placed against the full track, so a bar
+# at 30 % shows green fading towards yellow-green, one at 90 % runs green ->
+# yellow -> red.
+$script:UsageSpectrum = @(
+    @(0,   '#30D158'),
+    @(35,  '#7ED957'),
+    @(60,  '#FFD60A'),
+    @(75,  '#FF9F0A'),
+    @(85,  '#FF453A'),
+    @(100, '#D70015')
+)
+function New-UsageBrush($util) {
+    $u = [math]::Max(1.0, [math]::Min(100.0, [double]$util))
+    $b = New-Object System.Windows.Media.LinearGradientBrush
+    $b.StartPoint = [System.Windows.Point]::new(0, 0)
+    $b.EndPoint   = [System.Windows.Point]::new(1, 0)
+    foreach ($st in $script:UsageSpectrum) {
+        $g = New-Object System.Windows.Media.GradientStop
+        $g.Color  = [System.Windows.Media.ColorConverter]::ConvertFromString([string]$st[1])
+        $g.Offset = [double]$st[0] / $u
+        [void]$b.GradientStops.Add($g)
+    }
+    return $b
 }
 
 function Resolve-PctAccentFg($util, [string]$AccentFg) {
@@ -1208,9 +1260,7 @@ function Set-BarStateBrush($Bar, $Util) {
     }
     if (-not $script:BarBaseBrush.ContainsKey($name)) { $script:BarBaseBrush[$name] = $Bar.Background }
     $u = [double]$Util
-    $Bar.Background = if ($u -ge $script:BandRedPct) { New-GradientBrush '#D70015' '#FF453A' }
-                      elseif ($u -ge $script:BandYellowPct) { New-GradientBrush '#C9A000' '#FFD60A' }
-                      else { New-GradientBrush '#248A3D' '#30D158' }
+    $Bar.Background = New-UsageBrush $u
     if ($icon) { $icon.Stroke = NewBrush (Get-UsageBandColor $u) }
 }
 
@@ -1396,7 +1446,7 @@ function Update-FooterVersion {
     if (-not $script:window) { return }
     $el = $script:window.FindName('versionLabel')
     if (-not $el) { return }
-    $el.Text = if ($script:DisplayVersion) { [string]$script:DisplayVersion } else { '0.0.2 beta' }
+    $el.Text = if ($script:DisplayVersion) { [string]$script:DisplayVersion } else { '0.0.3 beta' }
     $fg = '#7C7C82'
     if ($script:Cfg -and $script:Themes) {
         $t = $script:Themes[[string]$script:Cfg.Theme]
@@ -1433,7 +1483,8 @@ function Apply-UnifiedTheme([string]$name) {
     $bgKeys = @('FivehColors','WeekColors','FabColors','OpusColors','WeekColors','FivehColors','WeekColors','FabColors','OpusColors','WeekColors','FivehColors','FivehColors')
     for ($i = 0; $i -lt $bars.Count; $i++) {
         $b = $script:window.FindName($bars[$i])
-        if ($b -and $t[$bgKeys[$i]]) { $b.Background = New-GradientBrush $t[$bgKeys[$i]][0] $t[$bgKeys[$i]][1] }
+        # Meter fills follow usage (Set-BarStateBrush), not the theme.
+        if ($b -and $t[$bgKeys[$i]] -and -not (Test-ThemeStateBars)) { $b.Background = New-GradientBrush $t[$bgKeys[$i]][0] $t[$bgKeys[$i]][1] }
         $l = $script:window.FindName($labels[$i])
         if ($l -and $t[$fgKeys[$i]]) { $l.Foreground = NewBrush $t[$fgKeys[$i]] }
         $s = $script:window.FindName($subs[$i])
@@ -1456,7 +1507,7 @@ function Apply-UnifiedTheme([string]$name) {
     $script:AccentOpus  = if ($t.OpusFg)  { $t.OpusFg }  else { '#FDE047' }
     foreach ($bn in @('grokWeekBar','grokWeekBarC')) {
         $gb = $script:window.FindName($bn)
-        if ($gb) { $gb.Background = New-GradientBrush $gc[0] $gc[1] }
+        if ($gb -and -not (Test-ThemeStateBars)) { $gb.Background = New-GradientBrush $gc[0] $gc[1] }
     }
     foreach ($ln in @('grokWeekLabel','grokWeekLabelC')) {
         $gl = $script:window.FindName($ln)
@@ -1466,7 +1517,7 @@ function Apply-UnifiedTheme([string]$name) {
     if ($gs) { $gs.Foreground = NewBrush ($gfg + '55') }
     foreach ($bn in @('reqBar','reqBarC')) {
         $rb = $script:window.FindName($bn)
-        if ($rb) { $rb.Background = New-GradientBrush $cc[0] $cc[1] }
+        if ($rb -and -not (Test-ThemeStateBars)) { $rb.Background = New-GradientBrush $cc[0] $cc[1] }
     }
     foreach ($ln in @('reqLabel','reqLabelC')) {
         $rl = $script:window.FindName($ln)
@@ -1768,9 +1819,14 @@ function Update-ClaudeSection {
     Set-Spark 'weekSparkC' 'weekSparkCanvasC' 'seven_day' 'weekSparkRowC'
     if ($hasAlert -and -not $stale) { Check-Alert 'seven_day' $d.seven_day.utilization }
 
+    # Fable has its own weekly limit only on some plans: show the row only
+    # while Claude reports a number for it (like Opus below).
+    $fabVis = if ($d.seven_day_fable -and $null -ne $d.seven_day_fable.utilization) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+    foreach ($n in @('fabRow', 'fabRowC')) { $el = $script:window.FindName($n); if ($el) { $el.Visibility = $fabVis } }
     Set-SectionBar 'fabBar' 'fabPct' 'fabSub' 'fabReset' $d.seven_day_fable.utilization $d.seven_day_fable.resets_at -AccentFg $script:AccentFab -ResetOverride $resetOverride
     Set-CompactBar 'fabBarC' 'fabPctC' $d.seven_day_fable.utilization -AccentFg $script:AccentFab
-    if ($hasAlert -and -not $stale) { Check-Alert 'seven_day_fable' $d.seven_day_fable.utilization }
+    if ($hasAlert -and -not $stale -and $fabVis -eq [System.Windows.Visibility]::Visible) { Check-Alert 'seven_day_fable' $d.seven_day_fable.utilization }
+    try { Update-ClaudeCloudCreditRow $d } catch { }
 
     if ($d.seven_day_opus) {
         $script:window.FindName('opusRow').Visibility = [System.Windows.Visibility]::Visible
@@ -1871,6 +1927,123 @@ function Get-OverlayStatNote {
     return $null
 }
 
+# Credits bought after the plan limit: the bar shows what is left of the last
+# top-up. Codex only reports the balance, so the top-up size is the highest
+# balance seen since the balance last went up (rounded to a round number when
+# it is within 1 % of one, e.g. 1,995 -> 2,000).
+function Get-CodexCreditReference([double]$Peak) {
+    foreach ($step in @(1000, 500, 100, 50, 10)) {
+        $nice = [math]::Ceiling($Peak / $step) * $step
+        if ($nice -gt 0 -and ($nice - $Peak) / $nice -le 0.01) { return [double]$nice }
+    }
+    return $Peak
+}
+
+# Claude's promotional credit for cloud sessions (e.g. $100 on Pro until a set
+# date). The usage endpoint reports it under a code name that changes, so it is
+# found by shape: a dollar limit with what is left and an expiry.
+function Get-ClaudeCloudCredit($Data) {
+    if (-not $Data) { return $null }
+    $skip = @('five_hour', 'seven_day', 'extra_usage', 'spend', 'limits')
+    $pairs = if ($Data -is [System.Collections.IDictionary]) { @($Data.Keys | ForEach-Object { @{ Name = [string]$_; Value = $Data[$_] } }) }
+             else { @($Data.PSObject.Properties | ForEach-Object { @{ Name = $_.Name; Value = $_.Value } }) }
+    foreach ($p in $pairs) {
+        if ($skip -contains $p.Name -or $p.Name -like 'seven_day*') { continue }
+        $v = $p.Value
+        if ($v -is [System.Collections.IEnumerable] -and -not ($v -is [System.Collections.IDictionary])) { continue }
+        if (-not $v -or $v -is [string] -or $v -is [ValueType]) { continue }
+        try {
+            if ($null -ne $v.limit_dollars -and [double]$v.limit_dollars -gt 0 -and $null -ne $v.remaining_dollars) {
+                # PowerShell 7 may already have turned the ISO date into a
+                # [datetime]; hand on an ISO string either way.
+                $exp = $v.resets_at
+                $exp = if ($exp -is [datetime]) { $exp.ToString('o') } elseif ($exp -is [DateTimeOffset]) { $exp.ToString('o') } else { [string]$exp }
+                return @{ Limit = [double]$v.limit_dollars; Left = [double]$v.remaining_dollars; ExpiresAt = $exp }
+            }
+        } catch { }
+    }
+    return $null
+}
+
+function Update-ClaudeCloudCreditRow($Data) {
+    $row = $script:window.FindName('cloudCreditRow')
+    if (-not $row) { return }
+    $c = Get-ClaudeCloudCredit $Data
+    $expired = $false
+    if ($c -and $c.ExpiresAt) { try { $expired = ([DateTimeOffset]::Parse($c.ExpiresAt) -le [DateTimeOffset]::Now) } catch { } }
+    if (-not $c -or $expired) { $row.Visibility = [System.Windows.Visibility]::Collapsed; return }
+    $row.Visibility = [System.Windows.Visibility]::Visible
+    $left = [math]::Max(0.0, [math]::Min(1.0, $c.Left / $c.Limit))
+    $used = (1.0 - $left) * 100.0
+    $band = Get-UsageBandColor $used
+    $pct = $script:window.FindName('cloudCreditPct')
+    $pct.Text = ('${0:N0}' -f $c.Left)
+    $pct.Foreground = NewBrush $band
+    $script:window.FindName('cloudCreditReset').Text = if ($c.ExpiresAt) { Format-PanelReset $c.ExpiresAt } else { '' }
+    $exp = ''
+    try { if ($c.ExpiresAt) { $exp = [DateTimeOffset]::Parse($c.ExpiresAt).LocalDateTime.ToString('yyyy-MM-dd HH:mm') } } catch { }
+    $row.ToolTip = ('Claude Code cloud sessions: ${0:N2} of ${1:N0} left. Expires {2}.' -f $c.Left, $c.Limit, $exp)
+    $bar = $script:window.FindName('cloudCreditBar')
+    Set-BarWidth $bar ([math]::Round($left * $script:BarTrackWidth))
+    $dark = if ($used -ge $script:BandRedPct) { '#D70015' } elseif ($used -ge $script:BandYellowPct) { '#C9A000' } else { '#248A3D' }
+    $bar.Background = New-GradientBrush $dark $band
+    $icon = $script:window.FindName('cloudCreditIcon'); if ($icon) { $icon.Stroke = NewBrush $band }
+}
+
+function Update-CodexCreditRow($Credits, $LogPeak = $null) {
+    $row = $script:window.FindName('codexCreditRow')
+    if (-not $row) { return }
+    $bal = if ($Credits) { $Credits.Balance } else { $null }
+    $show = $Credits -and ($Credits.Unlimited -or ($null -ne $bal -and $bal -gt 0))
+    if (-not $show) {
+        $row.Visibility = [System.Windows.Visibility]::Collapsed
+        # Spent (or none): the next purchase starts a new reference.
+        if ($script:Cfg -and $Credits -and $null -ne $script:Cfg['CodexCreditPeak']) {
+            $script:Cfg.Remove('CodexCreditPeak'); $script:Cfg.Remove('CodexCreditLast'); try { Save-UnifiedState } catch { }
+        }
+        return
+    }
+    $row.Visibility = [System.Windows.Visibility]::Visible
+    $pct = $script:window.FindName('codexCreditPct')
+    $sub = $script:window.FindName('codexCreditSub')
+    $bar = $script:window.FindName('codexCreditBar')
+    $icon = $script:window.FindName('codexCreditIcon')
+    if ($Credits.Unlimited) {
+        $pct.Text = [string][char]0x221E; $sub.Text = 'Unlimited'
+        Set-BarWidth $bar $script:BarTrackWidth
+        $bar.Background = New-GradientBrush '#248A3D' '#30D158'
+        if ($icon) { $icon.Stroke = NewBrush '#30D158' }
+        return
+    }
+    $b = [double]$bal
+    $peak = $null; $last = $null
+    try { if ($null -ne $script:Cfg['CodexCreditPeak']) { $peak = [double]$script:Cfg['CodexCreditPeak'] } } catch { }
+    try { if ($null -ne $script:Cfg['CodexCreditLast']) { $last = [double]$script:Cfg['CodexCreditLast'] } } catch { }
+    $changed = $false
+    # First sighting, or the balance went up (a top-up): measure from here.
+    if ($null -eq $peak -or $null -eq $last -or $b -gt $last + 0.5) { $peak = $b; $changed = $true }
+    # The session logs can remember the top-up from before the panel first saw
+    # the balance (e.g. 1,995 then, 1,847 now).
+    if ($null -ne $LogPeak -and [double]$LogPeak -gt $peak -and [double]$LogPeak -ge $b) { $peak = [double]$LogPeak; $changed = $true }
+    if ($null -eq $last -or [math]::Abs($b - $last) -ge 0.5) { $last = $b; $changed = $true }
+    if ($changed -and $script:Cfg) {
+        $script:Cfg['CodexCreditPeak'] = $peak; $script:Cfg['CodexCreditLast'] = $last
+        try { Save-UnifiedState } catch { }
+    }
+    $ref = Get-CodexCreditReference $peak
+    $left = if ($ref -gt 0) { [math]::Max(0.0, [math]::Min(1.0, $b / $ref)) } else { 0.0 }
+    $used = (1.0 - $left) * 100.0
+    $pct.Text = ('{0:N0}' -f [math]::Floor($b))
+    $sub.Text = ('of {0:N0}' -f $ref)
+    $pct.Foreground = NewBrush (Get-UsageBandColor $used)
+    $row.ToolTip = ('{0:N2} credits left of a {1:N0} top-up ({2:0}% left).' -f $b, $ref, ($left * 100))
+    Set-BarWidth $bar ([math]::Round($left * $script:BarTrackWidth))
+    $band = Get-UsageBandColor $used
+    $dark = if ($used -ge $script:BandRedPct) { '#D70015' } elseif ($used -ge $script:BandYellowPct) { '#C9A000' } else { '#248A3D' }
+    $bar.Background = New-GradientBrush $dark $band
+    if ($icon) { $icon.Stroke = NewBrush $band }
+}
+
 function Update-CodexSection {
     Set-SectionAuthError 'codexErrText' $script:CodexAuthState $script:CodexErrMsg -CliName 'codex' | Out-Null
 
@@ -1884,6 +2057,7 @@ function Update-CodexSection {
         Set-Spark 'codexWeekSpark' 'codexWeekSparkCanvas' 'codex_seven_day' 'codexWeekSparkRow'
         Set-Spark 'codexWeekSparkC' 'codexWeekSparkCanvasC' 'codex_seven_day' 'codexWeekSparkRowC'
         $cr = $script:window.FindName('codexResetsText'); if ($cr) { $cr.Text = '--' }
+        Update-CodexCreditRow $null
         $tt = $script:window.FindName('codexTokText'); if ($tt) { $tt.Text = '--' }
         $cv = $script:window.FindName('codexValText'); if ($cv) { $cv.Text = '--' }
         $ct = $script:window.FindName('codexTodayText'); if ($ct) { $ct.Text = '--' }
@@ -1925,6 +2099,7 @@ function Update-CodexSection {
     Set-Spark 'codexWeekSpark' 'codexWeekSparkCanvas' 'codex_seven_day' 'codexWeekSparkRow'
     Set-Spark 'codexWeekSparkC' 'codexWeekSparkCanvasC' 'codex_seven_day' 'codexWeekSparkRowC'
     $chd = $script:window.FindName('codexHeaderDetail'); if ($chd) { $chd.Text = Format-Reset $weekResetsAt }
+    Update-CodexCreditRow $s.Credits $s.CreditPeak
     $codexResetsText = $script:window.FindName('codexResetsText')
     if ($codexResetsText) {
         if ($null -ne $s.ResetsAvailable) {
@@ -2029,13 +2204,14 @@ function Update-CursorSection {
 
     $pill = $script:window.FindName('overPill')
     if ($hasBar -and $over) {
-        if ($bar) { $bar.Background = New-GradientBrush '#78350F' '#FF9F0A' }
-        if ($barC) { $barC.Background = New-GradientBrush '#78350F' '#FF9F0A' }
+        if ($bar) { $bar.Background = New-UsageBrush 100 }
+        if ($barC) { $barC.Background = New-UsageBrush 100 }
         if ($pill) { $pill.Visibility = [System.Windows.Visibility]::Visible }
     } else {
-        $cc = if ($script:CursorColorsCur) { $script:CursorColorsCur } else { @('#065F46','#34D399') }
-        if ($bar) { $bar.Background = New-GradientBrush $cc[0] $cc[1] }
-        if ($barC) { $barC.Background = New-GradientBrush $cc[0] $cc[1] }
+        if ($hasBar) {
+            if ($bar) { $bar.Background = New-UsageBrush $pct }
+            if ($barC) { $barC.Background = New-UsageBrush $pct }
+        }
         if ($pill) { $pill.Visibility = [System.Windows.Visibility]::Collapsed }
     }
 
@@ -2179,6 +2355,19 @@ function Update-AllSections {
         codex  = $script:CodexAuthState
         cursor = $script:AuthState
         grok   = $script:GrokAuthState
+    }
+    # After Refresh, a card whose refresh is still running reads "Syncing",
+    # like Claude's (Cursor's data arrives with the Claude usage job).
+    if ($script:ManualSyncKinds) {
+        $running = 0
+        foreach ($pair in @(@('codex', 'CodexStats'), @('cursor', 'ClaudeUsage'), @('grok', 'GrokUsage'))) {
+            $job = $null
+            if ($script:pollJobs -and $script:pollJobs.ContainsKey($pair[1])) { $job = $script:pollJobs[$pair[1]] }
+            if ($script:ManualSyncKinds -contains $pair[1] -and $job -and ([string]$job.State -in @('Running', 'NotStarted'))) {
+                $statuses[$pair[0]] = 'refreshing'; $running++
+            }
+        }
+        if ($running -eq 0 -and $status -ne 'refreshing') { $script:ManualSyncKinds = $null }
     }
     # Worst status among the sections the user enabled. A hidden provider -
     # Claude included - never surfaces its auth/stale/error in the top chrome.
