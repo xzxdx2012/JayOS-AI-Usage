@@ -2114,6 +2114,12 @@ function Update-CodexSection {
     $codexAfterHoursText = $script:window.FindName('codexAfterHoursText')
     if ($codexAfterHoursText) { $codexAfterHoursText.Text = ('{0} tok  {1} msgs' -f (Fmt-Tok $s.TodayAfterHoursTok), $s.TodayAfterHoursMsg) }
     $script:window.FindName('codexSessText').Text  = ('{0} sessions  {1} msgs' -f $s.Sessions, (Fmt-Tok $s.Messages))
+    # Still reading the session logs for the first time: no local totals yet.
+    if ($s.CatchingUp) {
+        foreach ($n in @('codexValText','codexTokText','codexTodayText','codexAfterHoursText','codexSessText')) {
+            $el = $script:window.FindName($n); if ($el) { $el.Text = '--' }
+        }
+    }
 }
 
 # ---------------------------------------------------------------------------

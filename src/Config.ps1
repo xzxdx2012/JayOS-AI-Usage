@@ -31,6 +31,16 @@ function Test-ProviderAuthFailed {
     return ($AuthState -eq 'auth' -or $AuthState -eq 'notoken')
 }
 
+# A date from JSON as a DateTimeOffset. PowerShell 7 hands ISO strings over as
+# [datetime] already; a [string] round trip writes them as MM/dd/yyyy without
+# the zone, which dd/MM cultures then misread or reject and which turns UTC
+# into local time. Strings are read culture-invariant; no zone means local.
+function ConvertTo-DateTimeOffset($Value) {
+    if ($Value -is [DateTimeOffset]) { return $Value }
+    if ($Value -is [DateTime]) { return [DateTimeOffset]::new($Value) }
+    return [DateTimeOffset]::Parse([string]$Value, [Globalization.CultureInfo]::InvariantCulture)
+}
+
 # WSL can contain the current Codex and Claude state even when the overlay runs
 # in Windows. Discovery is cached because every poll process can ask for it more
 # than once, and no WSL problem may interrupt the poll.
