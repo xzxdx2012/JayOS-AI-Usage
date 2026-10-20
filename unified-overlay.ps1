@@ -456,8 +456,8 @@ $script:ClaudeUsageScript = {
 
     Load-History
     Get-Usage -TimeoutSec $UsageTimeoutSec -Force:$ForceRefresh
-    Get-CursorUsage
-    Get-CursorLocalStats
+    Get-CursorUsage -TimeoutSec $UsageTimeoutSec
+    Get-CursorLocalStats -TimeoutSec $UsageTimeoutSec
 
     @{
         Kind            = 'ClaudeUsage'
@@ -609,6 +609,16 @@ function Start-OverlayBackgroundJob {
     return Start-Job -ScriptBlock $ScriptBlock -ArgumentList $ArgumentList
 }
 
+# How long a refresh job may run before it counts as hung. The Claude usage
+# job makes up to five requests in a row at UsageTimeoutSec each (usage,
+# profile, then Cursor usage, summary and analytics); reaping it earlier
+# restarted it on every 60 s poll whenever cursor.com was slow.
+function Get-RefreshJobCeilingSeconds([string]$Kind, [int]$UsageTimeoutSec) {
+    $requests = 2
+    if ($Kind -eq 'ClaudeUsage') { $requests = 5 }
+    return ($requests * $UsageTimeoutSec + 20)
+}
+
 function Start-AllRefreshJobs {
     param(
         [int]$UsageTimeoutSec = 20,
@@ -650,7 +660,7 @@ function Start-AllRefreshJobs {
         if ($script:pollJobs.ContainsKey($jobKind)) {
             $existing = $script:pollJobs[$jobKind]
             if ($existing.State -eq 'Running' -or $existing.State -eq 'NotStarted') {
-                $ceilingSeconds = (2 * $UsageTimeoutSec + 20)
+                $ceilingSeconds = Get-RefreshJobCeilingSeconds -Kind $jobKind -UsageTimeoutSec $UsageTimeoutSec
                 if (-not $script:pollJobStartedAt.ContainsKey($jobKind)) {
                     $script:pollJobStartedAt[$jobKind] = Get-Date
                     Write-Log "Start-AllRefreshJobs: previous $jobKind refresh still running; skipping this source."
@@ -756,7 +766,7 @@ function Complete-RefreshJobs {
                         $script:Stats = $r['Stats']
                     }
                     'CodexStats' {
-                        $script:CodexStats = $r['CodexStats']
+                        $script:CodexStats = Merge-CodexStatsResult $script:CodexStats $r['CodexStats']
                         $script:CodexAuthState = $r['CodexAuthState']
                         $script:CodexErrMsg = $r['CodexErrMsg']
                     }

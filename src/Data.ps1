@@ -204,7 +204,7 @@ function Get-ClaudeBackoffState {
 
         $until = $null
         if ($json.BackoffUntil) {
-            $until = ([System.DateTimeOffset]::Parse([string]$json.BackoffUntil)).LocalDateTime
+            $until = (ConvertTo-RenewalUtc $json.BackoffUntil).ToLocalTime()
         }
 
         return @{
@@ -373,7 +373,7 @@ function Get-CachedClaudeUsage {
         $path = Get-ClaudeUsageCachePath
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
         $saved = Get-Content -LiteralPath $path -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-        $asOf = [System.DateTimeOffset]::Parse([string]$saved.FetchedAt)
+        $asOf = [System.DateTimeOffset](ConvertTo-RenewalUtc $saved.FetchedAt)
         $age = [System.DateTimeOffset]::Now - $asOf
         if ($age.TotalHours -gt 24 -or $age.TotalMinutes -lt -5) { return $null }
         if (-not $saved.Data -or (-not $saved.Data.five_hour -and -not $saved.Data.seven_day)) { return $null }
@@ -1089,7 +1089,12 @@ function Convert-StatsCacheDate {
     param($Value)
 
     if (-not $Value) { return $null }
-    if ($Value -is [datetime]) { return $Value }
+    if ($Value -is [datetime]) {
+        # Windows PowerShell 5.1 reads a cached date back as UTC; Today and
+        # after-hours compare local wall-clock time (see Convert-CodexCacheDate).
+        if ($Value.Kind -eq [System.DateTimeKind]::Utc) { return $Value.ToLocalTime() }
+        return $Value
+    }
 
     try {
         return [System.DateTimeOffset]::Parse([string]$Value).LocalDateTime
