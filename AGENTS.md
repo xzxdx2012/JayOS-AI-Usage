@@ -1,4 +1,4 @@
-# JayOS AI Usage - notes for Claude
+# JayOS AI Usage - notes for coding agents
 
 A Windows "notch" overlay (PowerShell 7 / Windows PowerShell 5.1 + WPF) that shows Claude, Codex,
 Cursor and Grok usage and answers Claude Code / Codex permission requests from the notch.
