@@ -20,6 +20,7 @@ $script:ReqRenderHandler = $null
 $script:ReqRendering = $false
 $script:ReqHookMarker = 'ClaudeHook.ps1'
 $script:ReqDetailMax = 20000     # characters of a command / edit shown on a card
+$script:ReqJsonDepthMax = 100    # nesting a tool's raw input is shown to (ConvertTo-Json -Depth)
 
 # ---------------------------------------------------------------------------
 # Text (English source, translated like the rest of the UI)
@@ -71,7 +72,14 @@ foreach ($pair in @(
     @('AI requests in the notch',  '刘海里处理 AI 请求', 'ノッチで AI の確認に応答', 'Demandes IA dans l''encoche', '노치에서 AI 요청 처리'),
     @('Remind again if unanswered', '未处理时再次提醒', '未応答なら再通知',     'Rappeler sans réponse',    '응답 없으면 다시 알림'),
     @('Off',                       '关闭',               'オフ',                 'Désactivé',                '끄기'),
-    @('Renew Claude sign-in automatically', '自动续期 Claude 登录', 'Claude のサインインを自動更新', 'Renouveler la connexion Claude', 'Claude 로그인 자동 갱신')
+    @('Renew Claude sign-in automatically', '自动续期 Claude 登录', 'Claude のサインインを自動更新', 'Renouveler la connexion Claude', 'Claude 로그인 자동 갱신'),
+    @('Always allow also grants:',  '“总是允许”还会授予：', '「常に許可」で次も許可されます:', '« Toujours autoriser » accorde aussi :', '''항상 허용''은 다음 권한도 부여합니다:'),
+    @('Rule ({0}): {1}',           '规则（{0}）：{1}',   'ルール（{0}）: {1}',   'Règle ({0}) : {1}',        '규칙({0}): {1}'),
+    @('Replace rules ({0}): {1}',  '替换规则（{0}）：{1}', 'ルールを置換（{0}）: {1}', 'Remplacer les règles ({0}) : {1}', '규칙 교체({0}): {1}'),
+    @('Remove rule ({0}): {1}',    '删除规则（{0}）：{1}', 'ルールを削除（{0}）: {1}', 'Supprimer la règle ({0}) : {1}', '규칙 삭제({0}): {1}'),
+    @('Permission mode: {0}',      '权限模式：{0}',      '権限モード: {0}',      'Mode d''autorisation : {0}', '권한 모드: {0}'),
+    @('Folder access: {0}',        '允许访问文件夹：{0}', 'フォルダーへのアクセス: {0}', 'Accès au dossier : {0}', '폴더 접근: {0}'),
+    @('Remove folder access: {0}', '取消文件夹访问：{0}', 'フォルダーのアクセスを削除: {0}', 'Retirer l''accès au dossier : {0}', '폴더 접근 해제: {0}')
 )) {
     if ($script:I18nText -and -not $script:I18nText.ContainsKey($pair[0])) {
         $script:I18nText[$pair[0]] = @{ zh = $pair[1]; ja = $pair[2]; fr = $pair[3]; ko = $pair[4] }
@@ -605,16 +613,17 @@ function Send-RequestAnswer([string]$Id, [hashtable]$Answer) {
 function Get-RequestSummary($Req) {
     $tool = [string]$Req.tool
     $in = $Req.input
-    $title = ''; $detail = ''; $mono = $false
+    $title = ''; $detail = ''; $note = ''; $mono = $false; $tooDeep = $false
     switch -regex ($tool) {
         '^(Bash|PowerShell|shell|local_shell|exec_command|unified_exec)$' {
             # Codex can hand the command over as an argument list.
             $c = $in.command
             if ($c -is [System.Array]) { $c = (@($c) | ForEach-Object { [string]$_ }) -join ' ' }
             if (-not $c -and $in.cmd) { $c = $in.cmd }
+            # The command comes first and alone: the description is the model's
+            # own words and must never push what actually runs out of view.
             $title = 'Run a command'; $detail = [string]$c; $mono = $true
-            if ([string]$in.description) { $detail = [string]$in.description + "`n" + $detail }
-            if ([string]$in.justification) { $detail = [string]$in.justification + "`n" + $detail }
+            $note = (@([string]$in.justification, [string]$in.description) | Where-Object { $_ }) -join "`n"
         }
         '^apply_patch$' {
             $c = $in.command
@@ -656,20 +665,71 @@ function Get-RequestSummary($Req) {
         default {
             $name = $tool -replace '^mcp__', '' -replace '__', ' · '
             $title = 'Use ' + $name
-            try { $detail = ($in | ConvertTo-Json -Depth 4 -Compress) } catch { $detail = '' }
+            try { $detail = ($in | ConvertTo-Json -Depth $script:ReqJsonDepthMax -Compress -WarningAction SilentlyContinue) } catch { $detail = '' }
+            # Deeper than that, ConvertTo-Json writes "@{x=}" in place of the
+            # content: what would be allowed is not what the card shows.
+            if ((Get-ReqJsonDepth $in ($script:ReqJsonDepthMax + 1)) -gt $script:ReqJsonDepthMax) { $tooDeep = $true }
             $mono = $true
         }
     }
     # The full operation goes in the scrollable detail area. Beyond a size a
     # card can sensibly show, it is cut, marked, and can only be denied here
     # (Allow needs the terminal, where all of it can be read).
-    $truncated = $false
+    $truncated = $tooDeep
+    if ($note.Length -gt $script:ReqDetailMax) { $note = $note.Substring(0, $script:ReqDetailMax) + ' […]' }
     if ($detail.Length -gt $script:ReqDetailMax) {
         $more = $detail.Length - $script:ReqDetailMax
         $detail = $detail.Substring(0, $script:ReqDetailMax) + "`n`n[… " + ((Get-ReqText 'Not shown: {0} more characters') -f $more) + ']'
         $truncated = $true
     }
-    return @{ Title = (Get-ReqText $title); Detail = $detail; Mono = $mono; Truncated = $truncated }
+    $grants = if (Test-RequestAlwaysAllowed $Req) { Format-ReqGrants $Req.suggestions } else { '' }
+    return @{ Title = (Get-ReqText $title); Detail = $detail; Note = $note; Mono = $mono; Truncated = $truncated; Grants = $grants }
+}
+
+# How deeply objects and arrays nest in $Value (a plain value is 0). Counted
+# without recursion, and only up to $Stop, so a hostile input stays cheap.
+function Get-ReqJsonDepth($Value, [int]$Stop = 1000) {
+    $max = 0
+    $values = New-Object 'System.Collections.Generic.Stack[object]'
+    $levels = New-Object 'System.Collections.Generic.Stack[int]'
+    $values.Push($Value); $levels.Push(1)
+    while ($values.Count -gt 0) {
+        $v = $values.Pop(); $level = $levels.Pop()
+        if ($null -eq $v -or $v -is [string] -or $v -is [ValueType]) { continue }
+        if ($level -gt $max) { $max = $level; if ($max -gt $Stop) { break } }
+        if ($v -is [System.Collections.IDictionary]) {
+            foreach ($k in @($v.Keys)) { $values.Push($v[$k]); $levels.Push($level + 1) }
+        } elseif ($v -is [System.Collections.IEnumerable]) {
+            foreach ($c in $v) { $values.Push($c); $levels.Push($level + 1) }
+        } else {
+            foreach ($p in $v.PSObject.Properties) { $values.Push($p.Value); $levels.Push($level + 1) }
+        }
+    }
+    return $max
+}
+
+# What "Always allow" hands back to Claude Code (its permission_suggestions),
+# one line each, so the card says what is granted and where it is saved.
+function Format-ReqGrants($Suggestions) {
+    $lines = New-Object System.Collections.Generic.List[string]
+    foreach ($s in @($Suggestions | Where-Object { $_ })) {
+        $where = if ([string]$s.destination) { '  · ' + [string]$s.destination } else { '' }
+        switch -regex ([string]$s.type) {
+            '^(addRules|replaceRules|removeRules)$' {
+                $rules = (@($s.rules | Where-Object { $_ } | ForEach-Object {
+                    if ([string]$_.ruleContent) { '{0}({1})' -f [string]$_.toolName, [string]$_.ruleContent } else { [string]$_.toolName }
+                })) -join ', '
+                $fmt = switch ([string]$s.type) { 'addRules' { 'Rule ({0}): {1}' } 'replaceRules' { 'Replace rules ({0}): {1}' } default { 'Remove rule ({0}): {1}' } }
+                $lines.Add(((Get-ReqText $fmt) -f [string]$s.behavior, $rules) + $where)
+                break
+            }
+            '^setMode$' { $lines.Add(((Get-ReqText 'Permission mode: {0}') -f [string]$s.mode) + $where); break }
+            '^addDirectories$' { $lines.Add(((Get-ReqText 'Folder access: {0}') -f ((@($s.directories) | ForEach-Object { [string]$_ }) -join ', ')) + $where); break }
+            '^removeDirectories$' { $lines.Add(((Get-ReqText 'Remove folder access: {0}') -f ((@($s.directories) | ForEach-Object { [string]$_ }) -join ', ')) + $where); break }
+            default { try { $lines.Add(($s | ConvertTo-Json -Depth 6 -Compress -WarningAction SilentlyContinue)) } catch { } }
+        }
+    }
+    return ($lines -join "`n")
 }
 
 # old -> new as '- ' / '+ ' lines.
@@ -1279,11 +1339,27 @@ function Show-RequestCard($Req) {
             $box.Child = New-ReqScroll $dt 150
             [void]$stack.Children.Add($box)
         }
+        if ($sum.Note) {
+            # The agent's own explanation, below the command and apart from it.
+            $nt = New-ReqText $sum.Note 11.5 '#8E8E93'
+            $ns = New-ReqScroll $nt 60
+            $ns.Margin = '0,0,0,8'
+            [void]$stack.Children.Add($ns)
+        }
         $card.Truncated = [bool]$sum.Truncated
         if ($card.Truncated) {
             $warn = New-ReqText (Get-ReqText 'Too long to review here. Read it in the terminal to allow it.') 11.5 '#FF9F0A' 'SemiBold'
             $warn.Margin = '0,0,0,8'
             [void]$stack.Children.Add($warn)
+        }
+        if (-not $card.Truncated -and $sum.Grants) {
+            # Exactly what "Always allow" saves (rules, mode, folders) and where.
+            $gp = New-Object System.Windows.Controls.StackPanel
+            [void]$gp.Children.Add((New-ReqText (Get-ReqText 'Always allow also grants:') 11 '#8E8E93'))
+            [void]$gp.Children.Add((New-ReqText $sum.Grants 11.5 '#D1D1D6' 'Normal' $true))
+            $gs = New-ReqScroll $gp 90
+            $gs.Margin = '0,0,0,8'
+            [void]$stack.Children.Add($gs)
         }
         $row = New-Object System.Windows.Controls.WrapPanel
         if (-not $card.Truncated) {
