@@ -5,7 +5,7 @@ $script:CredPath = Join-Path $script:AppDir '.credentials.json'
 $script:ErrLog = Join-Path $script:AppDir 'errors.log'
 $script:UA = 'claude-code/test'
 New-Item -ItemType Directory -Path $script:AppDir -Force | Out-Null
-. (Join-Path (Join-Path (Split-Path $PSScriptRoot -Parent) 'src') 'Data.ps1')
+. (Join-Path (Split-Path $PSScriptRoot -Parent) 'src\Data.ps1')
 
 function Get-WslHomeRoots { @() }
 
@@ -17,8 +17,7 @@ try {
     # Expired access token + refresh token: Claude Code is asked to renew it
     # (a hidden one-line `claude -p` run), and the panel keeps "signed in".
     $script:Started = @()
-    $script:FixtureCli = Join-Path $script:AppDir 'claude.exe'
-    function Resolve-ClaudeCliExecutable { $script:FixtureCli }
+    function Resolve-ClaudeCliExecutable { 'C:\Tools\claude.exe' }
     function Start-Process { param($FilePath, $ArgumentList, $WorkingDirectory, $WindowStyle) $script:Started += ,@($FilePath, [string]$ArgumentList) }
     $script:State = @{ Data = $null; Status = 'init'; LastFetch = ''; Message = '' }
     Get-Usage -TimeoutSec 1

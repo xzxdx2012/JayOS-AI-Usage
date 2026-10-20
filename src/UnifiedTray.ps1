@@ -19,7 +19,7 @@
 #   EDGE_RETURN  the notch shrinks back into the sliver
 #
 # How it stays smooth: the window never changes size during a morph. It is a
-# fixed transparent stage at the top centre. A single black backdrop fills the
+# fixed transparent stage during motion, trimmed vertically when idle. A black backdrop fills the
 # stage and the stage's root Grid is clipped to a geometry rebuilt every frame
 # from (width, height, bottom radius, shoulder, dock). The clip also masks the
 # notch text and the panel content, so content is revealed by the silhouette
@@ -303,6 +303,7 @@ $script:I18nText = @{
     'Lines' = @{ zh = '行数'; ja = '行数'; fr = 'Lignes'; ko = '줄 수' }
     'over' = @{ zh = '超出'; ja = '超過'; fr = 'dépassé'; ko = '초과' }
     'used' = @{ zh = '已用'; ja = '使用済み'; fr = 'utilisé'; ko = '사용됨' }
+    'left' = @{ zh = '剩余'; ja = '残り'; fr = 'restant'; ko = '남음' }
     'high' = @{ zh = '偏高'; ja = '高め'; fr = 'élevé'; ko = '높음' }
     'critical!' = @{ zh = '即将用完！'; ja = '残りわずか！'; fr = 'critique !'; ko = '위험!' }
     'Est. Cost' = @{ zh = '预估费用'; ja = '推定コスト'; fr = 'Coût estimé'; ko = '예상 비용' }
@@ -357,6 +358,7 @@ $script:I18nText = @{
     'Compact mode' = @{ zh = '紧凑模式'; ja = 'コンパクトモード'; fr = 'Mode compact'; ko = '간단히 보기' }
     'Threshold alerts' = @{ zh = '用量提醒'; ja = 'しきい値通知'; fr = 'Alertes de seuil'; ko = '사용량 알림' }
     'Show history graph' = @{ zh = '显示历史曲线'; ja = '履歴グラフを表示'; fr = 'Afficher l''historique'; ko = '기록 그래프 표시' }
+    'Show remaining (not used)' = @{ zh = '显示剩余（而非已用）'; ja = '残量を表示（使用量ではなく）'; fr = 'Afficher le restant (pas l''utilisé)'; ko = '남은 양 표시 (사용량 대신)' }
     'Pin button on notch' = @{ zh = '刘海图钉按钮'; ja = 'ノッチのピンボタン'; fr = 'Épingle sur l''encoche'; ko = '노치 고정 버튼' }
     'Open at login' = @{ zh = '开机启动'; ja = 'ログイン時に起動'; fr = 'Lancer au démarrage'; ko = '로그인 시 실행' }
     'Start hidden to tray' = @{ zh = '启动时隐藏到托盘'; ja = 'トレイに隠して起動'; fr = 'Démarrer réduit'; ko = '트레이로 숨겨서 시작' }
@@ -390,7 +392,7 @@ $script:I18nText = @{
     'Update download failed' = @{ zh = '更新下载失败'; ja = '更新のダウンロードに失敗'; fr = 'Échec du téléchargement'; ko = '업데이트 다운로드 실패' }
     'Installing update…' = @{ zh = '正在安装更新…'; ja = '更新をインストール中…'; fr = 'Installation de la mise à jour…'; ko = '업데이트 설치 중…' }
     'Custom background colour' = @{ zh = '自定义背景颜色'; ja = '背景色をカスタマイズ'; fr = 'Couleur de fond personnalisée'; ko = '배경색 사용자 지정' }
-    'Cloud credit' = @{ zh = '云端赠送额度'; ja = 'クラウド特典'; fr = 'Crédit cloud'; ko = '클라우드 크레딧' }
+    'Cloud credit' = @{ zh = '云端剩余额度'; ja = 'クラウド残高'; fr = 'Crédit cloud restant'; ko = '클라우드 잔여 크레딧' }
     'Credits' = @{ zh = '加购额度'; ja = '追加クレジット'; fr = 'Crédits'; ko = '추가 크레딧' }
     'Unlimited' = @{ zh = '不限量'; ja = '無制限'; fr = 'Illimité'; ko = '무제한' }
     'Hue' = @{ zh = '色相'; ja = '色相'; fr = 'Teinte'; ko = '색상' }
@@ -2149,6 +2151,9 @@ function Start-NotchMotion {
 
 function Start-NotchRendering {
     if ($script:NotchRendering) { return }
+    # Reserve the animation surface BEFORE the first frame. At rest the HWND
+    # is only as tall as the visible silhouette (including the 5-DIP edge).
+    Sync-NotchWindowHeight -ForMotion
     if (-not $script:NotchRenderHandler) {
         $script:NotchRenderHandler = [System.EventHandler]{ param($s, $e) Invoke-NotchFrame $e }
     }
@@ -2236,6 +2241,7 @@ function Set-NotchRest {
     $script:NotchLeaveMs = 0.0
     Sync-NotchCursor
     Invoke-NotchApply
+    Sync-NotchWindowHeight
     Sync-IslandMenuItem
     if ((Test-NotchPinned) -and $script:window) {
         [void]$script:window.Dispatcher.BeginInvoke(
@@ -2365,16 +2371,27 @@ function Get-NotchHomePosition {
 }
 
 function Sync-NotchWindowHeight {
+    param([switch]$ForMotion)
     if (-not $script:window -or -not (Test-NotchShell)) { return }
-    $target = [math]::Ceiling([double]$script:NotchStage.PanelH + $script:NotchSpec.StagePadBottom)
+    if ($script:NotchState -eq 'SUSPENDED') { return }
+    # Keep the animation stage full-sized, but do not leave a panel-sized
+    # transparent HWND at rest: Snipping Tool selects the native window rect.
+    # Never shrink in CompositionTarget.Rendering. Stop-NotchRendering queues
+    # this operation after the final clipped frame has been presented.
+    $moving = $ForMotion -or $script:NotchRendering -or $script:NTracks.Count -gt 0 -or $null -ne $script:NotchTransition
+    $target = if ($moving) {
+        [math]::Ceiling([math]::Max([double]$script:NV.h, [double]$script:NotchStage.PanelH) + $script:NotchSpec.StagePadBottom)
+    } else {
+        [math]::Max(1.0, [math]::Ceiling([double]$script:NV.h))
+    }
     $current = [double]$script:window.Height
     if ([double]::IsNaN($current) -or $target -gt $current + 0.5) {
         $script:window.Height = $target
-    } elseif ($target -lt $current - 0.5 -and $script:NotchState -eq 'EDGE' -and -not $script:NotchRendering) {
-        # Shrinking a layered window can leave its old pixels on screen until
-        # the next full redraw, so the stage only gives height back while the
-        # visible part is the sliver at the top.
+    } elseif ($target -lt $current - 0.5 -and -not $moving) {
+        # The clip already hides the outgoing pixels. Invalidate the backdrop
+        # again after resizing so the smaller layered surface is repainted.
         $script:window.Height = $target
+        if ($script:NotchBackdrop) { $script:NotchBackdrop.InvalidateVisual() }
     }
 }
 
@@ -3991,6 +4008,15 @@ $miGraph = New-StripItem 'Show history graph' {
 $miGraph.Checked = [bool]$script:Cfg.ShowGraph
 [void]$script:ctxStrip.Items.Add($miGraph)
 
+$script:miRemaining = New-StripItem 'Show remaining (not used)' {
+    $script:Cfg.ShowRemaining = -not [bool]$script:Cfg.ShowRemaining
+    $script:miRemaining.Checked = [bool]$script:Cfg.ShowRemaining
+    Save-UnifiedState
+    Update-AllSections
+}
+$script:miRemaining.Checked = [bool]$script:Cfg.ShowRemaining
+[void]$script:ctxStrip.Items.Add($script:miRemaining)
+
 $script:miNotchPin = New-StripItem 'Pin button on notch' {
     Set-NotchPinButton (-not (Test-NotchPinButtonEnabled))
     $script:miNotchPin.Checked = (Test-NotchPinButtonEnabled)
@@ -4300,6 +4326,7 @@ Add-Separator
     $script:MenuToggleKeys = @{
         'Show stats panel' = 'ShowStats'; 'Compact mode' = 'Compact'; 'Threshold alerts' = 'ShowAlerts'
         'Show history graph' = 'ShowGraph'; 'Start hidden to tray' = 'StartHidden'
+        'Show remaining (not used)' = 'ShowRemaining'
         'Pin button on notch' = 'NotchPinButton'; 'AI requests in the notch' = 'AiRequests'
         'Notify when a task finishes' = 'AiNotifyDone'; 'Notify when the AI needs you' = 'AiNotifyAttention'
     }

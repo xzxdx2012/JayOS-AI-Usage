@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $script:AppDir = Join-Path $PSScriptRoot '.overlay-cleanup-test'
 if (Test-Path -LiteralPath $script:AppDir) { throw 'Cleanup test directory already exists.' }
 New-Item -ItemType Directory -Path $script:AppDir | Out-Null
-. (Join-Path (Join-Path (Split-Path $PSScriptRoot -Parent) 'src') 'Data.ps1')
+. (Join-Path (Split-Path $PSScriptRoot -Parent) 'src\Data.ps1')
 
 try {
     $oldNames = @(

@@ -133,7 +133,7 @@ function Convert-CodexCacheRecords {
 # the reaper killed the job before it could save - so Codex went blank for good.
 # The cache now remembers how far into each file it has read, plus the parser
 # state at that point, and each poll parses only the bytes appended since.
-$script:CodexCacheVersion = 5   # 5: credit points
+$script:CodexCacheVersion = 6   # 6: preserve credit valleys and the last observed balance
 # Bytes of each file's head that are fingerprinted, so a file replaced at the
 # same path (rather than appended to) is detected and parsed from scratch.
 $script:CodexHeadBytes = 4096
@@ -292,6 +292,7 @@ function New-CodexParseState {
         # Credit balance turning points (top-ups, running out) for the
         # "Credits" bar; steady spending in between is not kept.
         CreditPoints   = [System.Collections.Generic.List[object]]::new()
+        LastCreditSample = $null
     }
 }
 
@@ -300,9 +301,18 @@ function Add-CodexCreditPoint($State, $Credits, $Date) {
     if (-not $cs -or -not $Date) { return }
     $b = if ($null -ne $cs.Balance) { [double]$cs.Balance } else { 0.0 }
     $pts = $State.CreditPoints
-    $last = if ($pts.Count -gt 0) { $pts[$pts.Count - 1] } else { $null }
-    $keep = (-not $last) -or ([bool]$last.Has -ne $cs.Has) -or ($b -gt [double]$last.Balance + 0.5) -or ($b -le 0 -and [double]$last.Balance -gt 0)
-    if ($keep) { $pts.Add(@{ Date = $Date; Has = $cs.Has; Balance = $b }) }
+    # Compare with the previous observation, not the last retained peak.
+    $last = $State.LastCreditSample
+    $rising = $last -and $b -gt [double]$last.Balance + 0.5
+    if ($rising -and $pts.Count -gt 0) {
+        $tail = $pts[$pts.Count - 1]
+        # Preserve the valley so Get-CodexCreditPeak can see a smaller top-up.
+        if ($tail.Date -ne $last.Date) { $pts.Add($last) }
+    }
+    $keep = (-not $last) -or ([bool]$last.Has -ne $cs.Has) -or $rising -or ($b -le 0 -and [double]$last.Balance -gt 0)
+    $current = @{ Date = $Date; Has = $cs.Has; Balance = $b }
+    if ($keep) { $pts.Add($current) }
+    $State.LastCreditSample = $current
 }
 
 # Folds session-log lines into $State, one at a time and in order.
@@ -453,6 +463,10 @@ function ConvertFrom-CodexCachedState {
         if (-not $pt) { continue }
         $pd = Convert-CodexCacheDate $pt.Date
         if ($pd) { $state.CreditPoints.Add(@{ Date = $pd; Has = [bool]$pt.Has; Balance = [double]$pt.Balance }) }
+    }
+    if ($Saved.LastCreditSample) {
+        $lastDate = Convert-CodexCacheDate $Saved.LastCreditSample.Date
+        if ($lastDate) { $state.LastCreditSample = @{ Date = $lastDate; Has = [bool]$Saved.LastCreditSample.Has; Balance = [double]$Saved.LastCreditSample.Balance } }
     }
     return $state
 }
@@ -699,14 +713,19 @@ function ConvertFrom-CodexCredits($Credits) {
 # The size of the current top-up, from the credit balances the session logs
 # recorded over time (oldest first): a spent-out balance starts over, and a
 # balance that goes up is a new top-up. $null when no credits are seen.
-function Get-CodexCreditPeak($Samples) {
-    $peak = $null; $prev = $null
+function Get-CodexCreditPeak($Samples, [switch]$WithDate) {
+    $peak = $null; $prev = $null; $peakAt = $null
     foreach ($x in @($Samples | Sort-Object { $_.Date })) {
         $b = $x.Balance
-        if (-not $x.Has -or $null -eq $b -or $b -le 0) { $peak = $null; $prev = $null; continue }
-        if ($null -eq $peak -or ($null -ne $prev -and $b -gt $prev + 0.5)) { $peak = $b }
-        elseif ($b -gt $peak) { $peak = $b }
+        if (-not $x.Has -or $null -eq $b -or $b -le 0) { $peak = $null; $prev = $null; $peakAt = $null; continue }
+        if ($null -eq $peak -or ($null -ne $prev -and $b -gt $prev + 0.5) -or $b -gt $peak) {
+            $peak = $b; $peakAt = $x.Date
+        }
         $prev = $b
+    }
+    if ($WithDate) {
+        if ($null -ne $peak) { return @{ Balance = $peak; Date = $peakAt } }
+        return $null
     }
     return $peak
 }
@@ -1001,7 +1020,9 @@ function Get-CodexStats {
         try {
             if ($sessionDirs.Count -gt 0) {
                 $script:CodexStats = Measure-CodexStats $allRecords.ToArray() (Get-Date) $latestRateLimits
-                $script:CodexStats.CreditPeak = Get-CodexCreditPeak $creditSamples
+                $creditPeak = Get-CodexCreditPeak $creditSamples -WithDate
+                $script:CodexStats.CreditPeak = if ($creditPeak) { $creditPeak.Balance } else { $null }
+                $script:CodexStats.CreditPeakAt = if ($creditPeak) { $creditPeak.Date } else { $null }
             }
         } catch {
             Write-CodexLog "Get-CodexStats: Measure-CodexStats failed - $($_.Exception.Message)"

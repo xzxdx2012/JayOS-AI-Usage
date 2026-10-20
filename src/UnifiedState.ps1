@@ -17,6 +17,7 @@ $script:UnifiedCfgDefaults = @{
     Theme       = 'Graphite'
     ShowAlerts  = $true
     ShowGraph   = $false
+    ShowRemaining = $true
     AlertState = @{}
     ViewMode = 'Pinned'              # 'Pinned' | 'Quake'
     DropdownHotkey = 'Shift+F11'
@@ -110,7 +111,7 @@ function Load-UnifiedState {
         if (-not (Test-Path -LiteralPath $script:StatePath) -and -not (Test-Path -LiteralPath ($script:StatePath + '.bak'))) { return }
 
         $s = Read-StateJson $script:StatePath
-        foreach ($key in @('Left', 'Top', 'Opacity', 'StartHidden', 'ShowStats', 'Compact', 'Theme', 'ShowAlerts', 'ShowGraph', 'ViewMode', 'DropdownHotkey', 'ToggleOverlayHotkey', 'RefreshHotkey', 'DropdownMonitor', 'DropdownOpacity', 'DropdownHideOnFocusLoss', 'NotchPinButton', 'NotchPinned', 'Language', 'PanelBg', 'PanelBgRecent', 'CodexCreditPeak', 'CodexCreditLast', 'AiRequests', 'AiRequestRemind', 'AiNotifyDone', 'AiNotifyAttention')) {
+        foreach ($key in @('Left', 'Top', 'Opacity', 'StartHidden', 'ShowStats', 'Compact', 'Theme', 'ShowAlerts', 'ShowGraph', 'ViewMode', 'DropdownHotkey', 'ToggleOverlayHotkey', 'RefreshHotkey', 'DropdownMonitor', 'DropdownOpacity', 'DropdownHideOnFocusLoss', 'NotchPinButton', 'NotchPinned', 'Language', 'PanelBg', 'PanelBgRecent', 'CodexCreditPeak', 'CodexCreditLast', 'CodexCreditEpoch', 'ShowRemaining', 'AiRequests', 'AiRequestRemind', 'AiNotifyDone', 'AiNotifyAttention')) {
             $prop = $s.PSObject.Properties[$key]
             if ($prop -and $null -ne $prop.Value) { $script:Cfg[$key] = $prop.Value }
         }
