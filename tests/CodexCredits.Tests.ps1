@@ -10,7 +10,7 @@ function Assert($Value, [string]$Name) {
 }
 
 $script:AppDir = $root
-$script:ErrLog = Join-Path ($PSScriptRoot) ('codex-credits-' + [guid]::NewGuid().ToString('N') + '.log')
+$script:ErrLog = Join-Path ([IO.Path]::GetTempPath()) ('codex-credits-' + [guid]::NewGuid().ToString('N') + '.log')
 function Get-WslHomeRoots { return @() }
 . (Join-Path (Join-Path $root 'src') 'CodexData.ps1')
 

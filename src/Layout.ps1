@@ -72,8 +72,9 @@ function Get-ClampedWindowHeight {
 # The sub-label under each bar earns its ~12 DIP only when it says something the
 # bar does not. Set-SectionBar writes 'used' in the ordinary case and swaps in
 # 'high'/'critical!' past the thresholds; Cursor writes a request count there.
-# Anything that is not the plain 'used' filler stays on screen.
+# Anything that is not the plain 'used'/'left' filler stays on screen.
 function Test-BarSubVisible([string]$Text) {
     if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
-    return ($Text.Trim().ToLowerInvariant() -ne 'used')
+    $t = $Text.Trim().ToLowerInvariant()
+    return ($t -ne 'used' -and $t -ne 'left')
 }

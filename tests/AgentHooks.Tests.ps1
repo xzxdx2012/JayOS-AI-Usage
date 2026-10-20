@@ -21,16 +21,13 @@ try {
     $env:USERPROFILE = $tmp
     Remove-Item Env:CODEX_HOME -ErrorAction SilentlyContinue
     Remove-Item Env:CLAUDE_CONFIG_DIR -ErrorAction SilentlyContinue
-    # A fixture install folder with spaces; hook-registrations.json lands here,
-    # never in a real install.
-    $script:AppDir = Join-Path $tmp 'Jay OS AIUsageOverlay'
-    New-Item -ItemType Directory -Path $script:AppDir -Force | Out-Null
+    $script:AppDir = 'C:\Program Files\Jay OS\AIUsageOverlay'
     $script:I18nText = @{}; $script:I18nRules = @()
     function Write-Log($m) { }
-    . (Join-Path (Join-Path $root 'src') 'Requests.ps1')
+    . (Join-Path $root 'src\Requests.ps1')
 
-    $codexPath = Join-Path (Join-Path $tmp '.codex') 'hooks.json'
-    $claudePath = Join-Path (Join-Path $tmp '.claude') 'settings.json'
+    $codexPath = Join-Path $tmp '.codex\hooks.json'
+    $claudePath = Join-Path $tmp '.claude\settings.json'
     [IO.File]::WriteAllText($codexPath, '{"hooks":{"PostToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"python3 log.py"}]}],"Stop":[{"hooks":[{"type":"command","command":"say done"}]}]}}')
     [IO.File]::WriteAllText($claudePath, '{"model":"opus","hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo bye"}]}]}}')
 
@@ -45,8 +42,7 @@ try {
     Assert ([string]$h.commandWindows -eq [string]$h.command) 'commandWindows set'
     Assert ([int]$h.timeout -eq 600) 'PermissionRequest timeout 600 s'
     Assert ([string]$h.command -notmatch '^"') 'powershell.exe not quoted (works from cmd and PowerShell)'
-    $hookArg = '-File "' + ($script:AppDir.TrimEnd('\', '/') -replace '\\', '/') + '/hooks/ClaudeHook.ps1"'
-    Assert ([string]$h.command -match [regex]::Escape($hookArg)) 'script path quoted (spaces)'
+    Assert ([string]$h.command -match '-File "C:/Program Files/Jay OS/AIUsageOverlay/hooks/ClaudeHook.ps1"') 'script path quoted (spaces)'
     Assert (@($j.hooks.Stop).Count -eq 2) 'Stop: user hook kept + ours'
     Assert (@($j.hooks.PostToolUse).Count -eq 1) 'PostToolUse user hook kept'
     Assert (Test-Path -LiteralPath ($codexPath + '.jayos-backup')) 'backup written'

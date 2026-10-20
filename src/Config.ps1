@@ -11,7 +11,7 @@ $script:WarnPct        = 80
 $script:CritPct        = 95
 $script:WorkdayStartHour = 8
 $script:WorkdayEndHour   = 18
-$script:AppVersion     = '0.0.2'
+$script:AppVersion     = '0.0.3 beta'
 
 # ---------------------------------------------------------------------------
 # Shared provider health vocabulary
@@ -397,5 +397,6 @@ $script:Cfg = @{
     Theme       = 'Graphite'
     ShowAlerts  = $true    # threshold balloon alerts
     ShowGraph   = $false   # history sparkline (off by default to keep the panel compact)
+    ShowRemaining = $true  # bars/credits show what's LEFT (vs what's been used)
     AlertState = @{}
 }

@@ -34,3 +34,18 @@ Usage bands: green < 60 %, yellow >= 60 %, red >= 85 % (Get-UsageBandColor). Pan
 ## Data sources
 - Claude: OAuth usage endpoint. Fields five_hour, seven_day, seven_day_opus, seven_day_fable (often absent), a promotional cloud-session credit under a changing code name (found by shape: limit_dollars / remaining_dollars / resets_at). No reset-credit count is exposed.
 - Codex: `credits {has_credits, unlimited, balance}` in wham/usage and in session-log rate_limits; `rate_limit_reset_credits.available_count` = resets available.
+
+## Screenshot bounds regression (0.0.3 beta)
+- Keep full stage height only during motion; idle HWND height matches NV.h.
+- Start-NotchRendering reserves the full surface before registering Rendering.
+- Stop-NotchRendering settles through Dispatcher.Background; queued calls recheck current motion and mode.
+- Horizontal coordinates are unchanged so dragging and permission-card anchors remain compatible.
+- Unit coverage: tests/NotchWindowBounds.Tests.ps1 (no WPF).
+- Native WPF integration: pwsh -STA -NoProfile -File tests/NotchWindowBounds.Wpf.ps1
+  (also run with powershell -STA). The fixture reads GetWindowRect at 125% DPI and
+  checks startup, hover, expand and collapse over six cycles without loading user data.
+- The installed ReviewFixes fixture referenced an uninstalled colour-validation
+  branch. Keep its credit tests with the real Test-ShowRemaining dependency;
+  existing UiLogic/UiReview tests cover the installed colour-picker baseline.
+- Windows installer build: ./installer/build.ps1 -OutputDirectory <absolute-output-dir>
+  Requires Go 1.24+ and rsrc v0.10.2. Payload uses an explicit allowlist including hooks/.

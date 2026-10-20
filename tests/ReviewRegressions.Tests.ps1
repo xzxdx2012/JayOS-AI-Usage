@@ -209,8 +209,7 @@ try {
     # --- R5: Claude sign-in renewal ------------------------------------------
     . (Join-Path (Join-Path $root 'src') 'Data.ps1')
     function Write-Log($Message) { }
-    $script:FixtureCli = Join-Path $fixture 'claude.exe'
-    function Resolve-ClaudeCliExecutable { $script:FixtureCli }
+    function Resolve-ClaudeCliExecutable { 'C:\fixture\claude.exe' }
     $script:launches = 0
     function Start-Process { param($FilePath, $ArgumentList, $WorkingDirectory, $WindowStyle, [switch]$PassThru) $script:launches++; return $null }
     Clear-ClaudeCliRenewal

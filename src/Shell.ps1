@@ -1272,6 +1272,28 @@ function Set-BarStateBrush($Bar, $Util) {
     if ($icon) { $icon.Stroke = NewBrush (Get-UsageBandColor $u) }
 }
 
+# Whether the panel shows what is LEFT (default) or what has been USED. The
+# colour band always keys off used%; only the number, bar fill and sub-word
+# flip. Missing setting -> remaining.
+function Test-ShowRemaining {
+    if ($script:Cfg -and $script:Cfg.ContainsKey('ShowRemaining')) { return [bool]$script:Cfg['ShowRemaining'] }
+    return $true
+}
+# The percentage to display (and fill the bar to) for a used% utilisation.
+function Get-ShownPct([double]$util) {
+    $v = if (Test-ShowRemaining) { 100.0 - $util } else { $util }
+    return [math]::Max(0.0, [math]::Min(100.0, $v))
+}
+# The sub-word under a usage bar. High/critical warnings show in either mode;
+# otherwise the uninformative filler ('left' or 'used') is hidden to keep the
+# accordion compact (Test-BarSubVisible collapses both fillers).
+function Get-UsageSubWord([double]$util) {
+    if ($util -ge $script:CritPct) { return 'critical!' }
+    if ($util -ge $script:WarnPct) { return 'high' }
+    if (Test-ShowRemaining) { return 'left' }
+    return 'used'
+}
+
 function Set-SectionBar([string]$bar, [string]$pct, [string]$sub, [string]$reset, $util, $resetsAt, [string]$AccentFg = $null, [string]$ResetOverride = $null) {
     $b  = $script:window.FindName($bar)
     $p  = $script:window.FindName($pct)
@@ -1281,18 +1303,16 @@ function Set-SectionBar([string]$bar, [string]$pct, [string]$sub, [string]$reset
     Set-BarStateBrush $b $util
     if ($null -eq $util) {
         Set-BarWidth $b 0; $p.Text = '--'; Set-PctAccentStyle $p '#F5F5F7'
-        if ($sb) { Set-BarSubText $sb 'used' }
+        if ($sb) { Set-BarSubText $sb (Get-UsageSubWord 0) }
         if ($r)  { $r.Text  = '' }
         return
     }
     $u        = [double]$util
-    Set-BarWidth $b ([math]::Max(0, [math]::Min($script:BarTrackWidth, [math]::Round($u / 100.0 * $script:BarTrackWidth))))
-    $p.Text   = ('{0:0}%' -f $u)
+    $shown    = Get-ShownPct $u
+    Set-BarWidth $b ([math]::Max(0, [math]::Min($script:BarTrackWidth, [math]::Round($shown / 100.0 * $script:BarTrackWidth))))
+    $p.Text   = ('{0:0}%' -f $shown)
     Set-PctAccentStyle $p (Resolve-PctAccentFg $u $AccentFg)
-    if ($sb) {
-        $subText = if ($u -ge $script:CritPct) { 'critical!' } elseif ($u -ge $script:WarnPct) { 'high' } else { 'used' }
-        Set-BarSubText $sb $subText
-    }
+    if ($sb) { Set-BarSubText $sb (Get-UsageSubWord $u) }
     if ($r) {
         if ($ResetOverride) { $r.Text = $ResetOverride } else { $r.Text = Format-PanelReset $resetsAt }
     }
@@ -1326,8 +1346,9 @@ function Set-CompactBar([string]$bar, [string]$pct, $util, [string]$AccentFg = $
         return
     }
     $u = [double]$util
-    Set-BarWidth $b ([math]::Max(0, [math]::Min($script:CompactBarWidth, [math]::Round($u / 100.0 * $script:CompactBarWidth))))
-    $p.Text = ('{0:0}%' -f $u)
+    $shown = Get-ShownPct $u
+    Set-BarWidth $b ([math]::Max(0, [math]::Min($script:CompactBarWidth, [math]::Round($shown / 100.0 * $script:CompactBarWidth))))
+    $p.Text = ('{0:0}%' -f $shown)
     Set-PctAccentStyle $p (Resolve-PctAccentFg $u $AccentFg) -Compact
 }
 
@@ -1993,20 +2014,24 @@ function Update-ClaudeCloudCreditRow($Data) {
     $used = (1.0 - $left) * 100.0
     $band = Get-UsageBandColor $used
     $pct = $script:window.FindName('cloudCreditPct')
-    $pct.Text = ('${0:N0}' -f $c.Left)
+    # Number and bar follow the remaining/used toggle; colour keys off used.
+    $showRem = Test-ShowRemaining
+    $amount  = if ($showRem) { $c.Left } else { [math]::Max(0.0, $c.Limit - $c.Left) }
+    $frac    = if ($showRem) { $left } else { 1.0 - $left }
+    $pct.Text = ('${0:N0}' -f $amount)
     $pct.Foreground = NewBrush $band
     $script:window.FindName('cloudCreditReset').Text = if ($c.ExpiresAt) { Format-PanelReset $c.ExpiresAt } else { '' }
     $exp = ''
     try { if ($c.ExpiresAt) { $exp = [DateTimeOffset]::Parse($c.ExpiresAt).LocalDateTime.ToString('yyyy-MM-dd HH:mm') } } catch { }
     $row.ToolTip = ('Claude Code cloud sessions: ${0:N2} of ${1:N0} left. Expires {2}.' -f $c.Left, $c.Limit, $exp)
     $bar = $script:window.FindName('cloudCreditBar')
-    Set-BarWidth $bar ([math]::Round($left * $script:BarTrackWidth))
+    Set-BarWidth $bar ([math]::Round($frac * $script:BarTrackWidth))
     $dark = if ($used -ge $script:BandRedPct) { '#D70015' } elseif ($used -ge $script:BandYellowPct) { '#C9A000' } else { '#248A3D' }
     $bar.Background = New-GradientBrush $dark $band
     $icon = $script:window.FindName('cloudCreditIcon'); if ($icon) { $icon.Stroke = NewBrush $band }
 }
 
-function Update-CodexCreditRow($Credits, $LogPeak = $null) {
+function Update-CodexCreditRow($Credits, $LogPeak = $null, $LogPeakAt = $null) {
     $row = $script:window.FindName('codexCreditRow')
     if (-not $row) { return }
     $bal = if ($Credits) { $Credits.Balance } else { $null }
@@ -2015,7 +2040,7 @@ function Update-CodexCreditRow($Credits, $LogPeak = $null) {
         $row.Visibility = [System.Windows.Visibility]::Collapsed
         # Spent (or none): the next purchase starts a new reference.
         if ($script:Cfg -and $Credits -and $null -ne $script:Cfg['CodexCreditPeak']) {
-            $script:Cfg.Remove('CodexCreditPeak'); $script:Cfg.Remove('CodexCreditLast'); try { Save-UnifiedState } catch { }
+            $script:Cfg.Remove('CodexCreditPeak'); $script:Cfg.Remove('CodexCreditLast'); $script:Cfg.Remove('CodexCreditEpoch'); try { Save-UnifiedState } catch { }
         }
         return
     }
@@ -2036,24 +2061,45 @@ function Update-CodexCreditRow($Credits, $LogPeak = $null) {
     try { if ($null -ne $script:Cfg['CodexCreditPeak']) { $peak = [double]$script:Cfg['CodexCreditPeak'] } } catch { }
     try { if ($null -ne $script:Cfg['CodexCreditLast']) { $last = [double]$script:Cfg['CodexCreditLast'] } } catch { }
     $changed = $false
-    # First sighting, or the balance went up (a top-up): measure from here.
-    if ($null -eq $peak -or $null -eq $last -or $b -gt $last + 0.5) { $peak = $b; $changed = $true }
-    # The session logs can remember the top-up from before the panel first saw
-    # the balance (e.g. 1,995 then, 1,847 now).
-    if ($null -ne $LogPeak -and [double]$LogPeak -gt $peak -and [double]$LogPeak -ge $b) { $peak = [double]$LogPeak; $changed = $true }
+    $epoch = $null; $logAt = $null
+    try { if ($script:Cfg['CodexCreditEpoch']) { $epoch = [DateTimeOffset]::Parse([string]$script:Cfg['CodexCreditEpoch']) } } catch { }
+    try {
+        if ($LogPeakAt -is [datetime]) { $logAt = [DateTimeOffset]$LogPeakAt }
+        elseif ($LogPeakAt -is [DateTimeOffset]) { $logAt = $LogPeakAt }
+        elseif ($LogPeakAt) { $logAt = [DateTimeOffset]::Parse([string]$LogPeakAt) }
+    } catch { }
+    $topUp = $null -ne $last -and $b -gt $last + 0.5
+    $first = $null -eq $peak -or $null -eq $last
+    if ($first -or $topUp) { $peak = $b; $changed = $true }
+    if ($topUp) {
+        # A newly observed purchase supersedes all older transcript peaks.
+        $epoch = [DateTimeOffset]::UtcNow; $changed = $true
+    } elseif ($first -or $null -eq $epoch) {
+        # Bootstrap/migrate once; a recovered log can repair an old wrong peak.
+        if ($null -ne $LogPeak -and [double]$LogPeak -ge $b) { $peak = [double]$LogPeak }
+        $epoch = if ($logAt) { $logAt } else { [DateTimeOffset]::UtcNow }
+        $changed = $true
+    } elseif ($logAt -and $logAt -gt $epoch -and $null -ne $LogPeak -and [double]$LogPeak -ge $b) {
+        $peak = [double]$LogPeak; $epoch = $logAt; $changed = $true
+    }
     if ($null -eq $last -or [math]::Abs($b - $last) -ge 0.5) { $last = $b; $changed = $true }
     if ($changed -and $script:Cfg) {
         $script:Cfg['CodexCreditPeak'] = $peak; $script:Cfg['CodexCreditLast'] = $last
+        $script:Cfg['CodexCreditEpoch'] = $epoch.ToUniversalTime().ToString('o')
         try { Save-UnifiedState } catch { }
     }
     $ref = Get-CodexCreditReference $peak
     $left = if ($ref -gt 0) { [math]::Max(0.0, [math]::Min(1.0, $b / $ref)) } else { 0.0 }
     $used = (1.0 - $left) * 100.0
-    $pct.Text = ('{0:N0}' -f [math]::Floor($b))
+    # Number and bar follow the remaining/used toggle; colour keys off used.
+    $showRem = Test-ShowRemaining
+    $amount  = if ($showRem) { $b } else { [math]::Max(0.0, $ref - $b) }
+    $frac    = if ($showRem) { $left } else { 1.0 - $left }
+    $pct.Text = ('{0:N0}' -f [math]::Floor($amount))
     $sub.Text = ('of {0:N0}' -f $ref)
     $pct.Foreground = NewBrush (Get-UsageBandColor $used)
     $row.ToolTip = ('{0:N2} credits left of a {1:N0} top-up ({2:0}% left).' -f $b, $ref, ($left * 100))
-    Set-BarWidth $bar ([math]::Round($left * $script:BarTrackWidth))
+    Set-BarWidth $bar ([math]::Round($frac * $script:BarTrackWidth))
     $band = Get-UsageBandColor $used
     $dark = if ($used -ge $script:BandRedPct) { '#D70015' } elseif ($used -ge $script:BandYellowPct) { '#C9A000' } else { '#248A3D' }
     $bar.Background = New-GradientBrush $dark $band
@@ -2115,7 +2161,7 @@ function Update-CodexSection {
     Set-Spark 'codexWeekSpark' 'codexWeekSparkCanvas' 'codex_seven_day' 'codexWeekSparkRow'
     Set-Spark 'codexWeekSparkC' 'codexWeekSparkCanvasC' 'codex_seven_day' 'codexWeekSparkRowC'
     $chd = $script:window.FindName('codexHeaderDetail'); if ($chd) { $chd.Text = Format-Reset $weekResetsAt }
-    Update-CodexCreditRow $s.Credits $s.CreditPeak
+    Update-CodexCreditRow $s.Credits $s.CreditPeak $s.CreditPeakAt
     $codexResetsText = $script:window.FindName('codexResetsText')
     if ($codexResetsText) {
         if ($null -ne $s.ResetsAvailable) {

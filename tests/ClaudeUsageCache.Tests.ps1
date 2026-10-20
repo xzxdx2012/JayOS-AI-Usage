@@ -3,8 +3,8 @@ $ErrorActionPreference = 'Stop'
 $script:AppDir = Join-Path $PSScriptRoot '.claude-cache-test'
 $script:ErrLog = Join-Path $script:AppDir 'errors.log'
 New-Item -ItemType Directory -Path $script:AppDir -Force | Out-Null
-. (Join-Path (Join-Path (Split-Path $PSScriptRoot -Parent) 'src') 'Data.ps1')
-. (Join-Path (Join-Path (Split-Path $PSScriptRoot -Parent) 'src') 'History.ps1')
+. (Join-Path (Split-Path $PSScriptRoot -Parent) 'src\Data.ps1')
+. (Join-Path (Split-Path $PSScriptRoot -Parent) 'src\History.ps1')
 
 try {
     $data = [pscustomobject]@{
@@ -27,7 +27,7 @@ try {
                 five_hour = [pscustomobject]@{ utilization = 42.0 }
                 seven_day = [pscustomobject]@{ utilization = 63.0 }
             })
-        } -ArgumentList $script:AppDir, (Join-Path (Join-Path (Split-Path $PSScriptRoot -Parent) 'src') 'Data.ps1')
+        } -ArgumentList $script:AppDir, (Join-Path (Split-Path $PSScriptRoot -Parent) 'src\Data.ps1')
     }
     try {
         $jobs | Wait-Job | Out-Null

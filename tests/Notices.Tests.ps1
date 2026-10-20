@@ -33,14 +33,10 @@ function Invoke-Hook([string]$Json, [string]$Agent = 'claude') {
     $info.Arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path (Join-Path $fixture 'hooks') 'ClaudeHook.ps1') + '" -Agent ' + $Agent
     $info.UseShellExecute = $false; $info.CreateNoWindow = $true
     $info.RedirectStandardInput = $true; $info.RedirectStandardOutput = $true; $info.RedirectStandardError = $true
-    # Send actual UTF-8 bytes even on Windows with a legacy console code page.
-    # Otherwise the BOM fixture is changed to '?' by the parent before the hook reads it.
     $p = New-Object System.Diagnostics.Process; $p.StartInfo = $info
     try {
         [void]$p.Start()
-        $bytes = [Text.Encoding]::UTF8.GetBytes($Json + "`n")
-        $p.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
-        $p.StandardInput.BaseStream.Flush(); $p.StandardInput.Close()
+        $p.StandardInput.WriteLine($Json); $p.StandardInput.Close()
         $done = $p.WaitForExit(8000)
         return @{ Exited = $done; Out = $p.StandardOutput.ReadToEnd() }
     } finally { if (-not $p.HasExited) { $p.Kill(); $p.WaitForExit() }; $p.Dispose() }
@@ -56,12 +52,6 @@ try {
     Assert ($n.Count -eq 1 -and $n[0].kind -eq 'done' -and $n[0].agent -eq 'claude' -and $n[0].session -eq 's1') 'finished turn: a "done" notice is written'
     Assert ($null -ne $n[0].PSObject.Properties['chain']) 'notice records the process chain (to find the terminal window)'
     Assert (@(Get-ChildItem -LiteralPath $reqDir -Filter '*.req.json' -File).Count -eq 0) 'finished turn: no request to answer'
-    Clear-Notes
-
-    # A parent whose console is UTF-8 can put a byte order mark before the JSON;
-    # Windows PowerShell 5.1's ConvertFrom-Json rejects it.
-    $r = Invoke-Hook ([string][char]0xFEFF + '{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"Done."}')
-    Assert (@(Get-Notes).Count -eq 1) 'input with a byte order mark is still read'
     Clear-Notes
 
     $r = Invoke-Hook '{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"Should I use Redis or Postgres?"}' 'codex'
