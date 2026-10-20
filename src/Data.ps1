@@ -349,20 +349,37 @@ function Save-ClaudeUsageCache($Data) {
     $path = Get-ClaudeUsageCachePath
     $tmp = $path + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
     $backup = $path + '.' + [guid]::NewGuid().ToString('N') + '.bak'
+    # Background refresh jobs can save at the same moment; on Windows two
+    # File.Replace calls on one target fail ("unable to move the replacement file").
+    $m = New-Object System.Threading.Mutex($false, 'Local\JayOS-AIUsage-ClaudeUsageCache')
+    $held = $false
     try {
         $payload = [pscustomobject]@{
             FetchedAt = [System.DateTimeOffset]::Now.ToString('o')
             Data = $Data
         } | ConvertTo-Json -Depth 16
         [System.IO.File]::WriteAllText($tmp, $payload, (New-Object System.Text.UTF8Encoding($false)))
-        if (Test-Path -LiteralPath $path) {
-            [System.IO.File]::Replace($tmp, $path, $backup)
-        } else {
-            [System.IO.File]::Move($tmp, $path)
+        try { $held = $m.WaitOne(5000) } catch [System.Threading.AbandonedMutexException] { $held = $true }
+        if (-not $held) { throw 'Another JayOS process is saving the Claude usage cache.' }
+        for ($try = 1; ; $try++) {
+            try {
+                if (Test-Path -LiteralPath $path) {
+                    [System.IO.File]::Replace($tmp, $path, $backup)
+                } else {
+                    [System.IO.File]::Move($tmp, $path)
+                }
+                break
+            } catch {
+                # A reader (Get-CachedClaudeUsage) can hold the file for a moment.
+                if ($try -ge 5) { throw }
+                Start-Sleep -Milliseconds (50 * $try)
+            }
         }
     } catch {
         Write-Log "Claude usage cache save failed - $($_.Exception.GetType().Name): $($_.Exception.Message)"
     } finally {
+        if ($held) { try { $m.ReleaseMutex() } catch { } }
+        $m.Dispose()
         try { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue } catch { }
         try { Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue } catch { }
     }

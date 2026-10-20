@@ -145,6 +145,8 @@ function Write-Notice([string]$Kind, [string]$Text) {
 try {
     $stage = 'read input'
     $raw = [Console]::In.ReadToEnd()
+    # A UTF-8 console in the parent can prefix a byte order mark; 5.1's ConvertFrom-Json rejects it.
+    if ($raw) { $raw = $raw.TrimStart([char]0xFEFF) }
     if (-not $raw) { exit 0 }
     $in = $raw | ConvertFrom-Json
     $event = [string]$in.hook_event_name

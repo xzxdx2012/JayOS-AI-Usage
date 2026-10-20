@@ -47,20 +47,26 @@ function Clear-Notes { Get-ChildItem -LiteralPath $reqDir -Filter '*.note.json' 
 try {
     # --- hook side --------------------------------------------------------
     $r = Invoke-Hook '{"hook_event_name":"Stop","session_id":"s1","cwd":"C:/p/demo","last_assistant_message":"All tests pass.\n\nThe build is green."}'
-    $n = Get-Notes
+    $n = @(Get-Notes)
     Assert ($r.Exited -and [string]::IsNullOrEmpty($r.Out)) 'finished turn: hook returns at once, prints nothing'
     Assert ($n.Count -eq 1 -and $n[0].kind -eq 'done' -and $n[0].agent -eq 'claude' -and $n[0].session -eq 's1') 'finished turn: a "done" notice is written'
     Assert ($null -ne $n[0].PSObject.Properties['chain']) 'notice records the process chain (to find the terminal window)'
     Assert (@(Get-ChildItem -LiteralPath $reqDir -Filter '*.req.json' -File).Count -eq 0) 'finished turn: no request to answer'
     Clear-Notes
 
+    # A parent whose console is UTF-8 can put a byte order mark before the JSON;
+    # Windows PowerShell 5.1's ConvertFrom-Json rejects it.
+    $r = Invoke-Hook ([string][char]0xFEFF + '{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"Done."}')
+    Assert (@(Get-Notes).Count -eq 1) 'input with a byte order mark is still read'
+    Clear-Notes
+
     $r = Invoke-Hook '{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"Should I use Redis or Postgres?"}' 'codex'
-    $n = Get-Notes
+    $n = @(Get-Notes)
     Assert ($r.Exited -and [string]::IsNullOrEmpty($r.Out) -and $n.Count -eq 1 -and $n[0].kind -eq 'ask' -and $n[0].agent -eq 'codex') 'either/or question: "answer in the terminal" notice'
     Clear-Notes
 
     $r = Invoke-Hook '{"hook_event_name":"Notification","session_id":"s2","notification_type":"permission_prompt","message":"Claude needs your permission to use Bash"}'
-    $n = Get-Notes
+    $n = @(Get-Notes)
     Assert ($r.Exited -and $n.Count -eq 1 -and $n[0].kind -eq 'permission' -and $n[0].message -like '*permission*') 'Notification permission_prompt -> permission notice'
     Clear-Notes
     $r = Invoke-Hook '{"hook_event_name":"Notification","session_id":"s2","notification_type":"idle_prompt","message":"Claude is waiting for your input"}'
