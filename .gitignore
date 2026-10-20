@@ -19,3 +19,6 @@ claude-credential-preference.json
 hook-registrations.json
 overlay-history.json
 PROJECT-LOG.md
+
+# Test fixtures left behind by an aborted run
+tests/fixture-*/
