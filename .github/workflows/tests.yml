@@ -1,0 +1,47 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    name: ${{ matrix.os }} / ${{ matrix.shell }}
+    runs-on: ${{ matrix.os }}
+    # Some tests still use Windows-only paths; drop this once T2 lands.
+    continue-on-error: ${{ matrix.os == 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            shell: powershell
+          - os: windows-latest
+            shell: pwsh
+          - os: ubuntu-latest
+            shell: pwsh
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tests
+        run: |
+          $PSVersionTable.PSVersion.ToString()
+          $exe = (Get-Process -Id $PID).Path
+          $failed = @()
+          foreach ($t in Get-ChildItem -Path tests -Filter '*.Tests.ps1' | Sort-Object Name) {
+              Write-Host "::group::$($t.Name)"
+              & $exe -NoProfile -ExecutionPolicy Bypass -File $t.FullName
+              $code = $LASTEXITCODE
+              Write-Host "::endgroup::"
+              if ($code -ne 0) {
+                  Write-Host "::error file=tests/$($t.Name)::$($t.Name) exited with code $code"
+                  $failed += $t.Name
+              }
+          }
+          if ($failed.Count -gt 0) {
+              Write-Host ("Failed: " + ($failed -join ', '))
+              exit 1
+          }
+          Write-Host 'All test scripts passed.'
