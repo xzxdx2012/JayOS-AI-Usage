@@ -63,7 +63,7 @@ function Test-GrokAuthEntryExpired {
     if (-not $raw) { return $false }
 
     try {
-        $exp = [datetimeoffset]::Parse([string]$raw)
+        $exp = ConvertTo-DateTimeOffset $raw
         return ($exp -le [datetimeoffset]::Now)
     } catch {
         return $false
@@ -124,10 +124,10 @@ function Convert-GrokPeriodEnd {
     param($Value)
 
     if (-not $Value) { return $null }
-    if ($Value -is [datetime]) { return $Value }
 
     try {
-        return [System.DateTimeOffset]::Parse([string]$Value).LocalDateTime
+        # A UTC [datetime] (PowerShell 7 JSON) is handed out as local time too.
+        return (ConvertTo-DateTimeOffset $Value).LocalDateTime
     } catch {
         return $null
     }

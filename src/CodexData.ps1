@@ -984,35 +984,38 @@ function Get-CodexStats {
     }
 
     if ($stopped) {
-        # Bank the progress and keep every file this poll did not reach, then
-        # publish nothing: partial totals would read as real numbers.
+        # Bank the progress and keep every file this poll did not reach. No
+        # local totals: partial ones would read as real numbers. The live
+        # limits below still go out, marked CatchingUp (Merge-CodexStatsResult).
         foreach ($key in @($script:CodexStatsFileCache.Keys)) {
             if (-not $activeCache.ContainsKey($key)) { $activeCache[$key] = $script:CodexStatsFileCache[$key] }
         }
         $script:CodexStatsFileCache = $activeCache
         Export-CodexStatsFileCache $cachePath
         Write-CodexLog 'Get-CodexStats: still catching up on session logs; progress saved for the next poll'
-        return
-    }
+        $script:CodexStats = $null
+    } else {
+        $script:CodexStatsFileCache = $activeCache
+        Export-CodexStatsFileCache $cachePath
 
-    $script:CodexStatsFileCache = $activeCache
-    Export-CodexStatsFileCache $cachePath
-
-    try {
-        if ($sessionDirs.Count -gt 0) {
-            $script:CodexStats = Measure-CodexStats $allRecords.ToArray() (Get-Date) $latestRateLimits
-            $script:CodexStats.CreditPeak = Get-CodexCreditPeak $creditSamples
+        try {
+            if ($sessionDirs.Count -gt 0) {
+                $script:CodexStats = Measure-CodexStats $allRecords.ToArray() (Get-Date) $latestRateLimits
+                $script:CodexStats.CreditPeak = Get-CodexCreditPeak $creditSamples
+            }
+        } catch {
+            Write-CodexLog "Get-CodexStats: Measure-CodexStats failed - $($_.Exception.Message)"
         }
-    } catch {
-        Write-CodexLog "Get-CodexStats: Measure-CodexStats failed - $($_.Exception.Message)"
     }
 
     # The current Codex no longer persists rate limits to session logs, so the
     # weekly bar and reset-credit count come from the live usage endpoint. Prefer
     # live values when available; otherwise keep whatever the logs provided.
+    $liveOk = $false
     try {
         $live = Get-CodexLiveUsage
         if ($live) {
+            $liveOk = $true
             if (-not $script:CodexStats) {
                 $script:CodexStats = Measure-CodexStats @() (Get-Date)
             }
@@ -1027,4 +1030,30 @@ function Get-CodexStats {
     } catch {
         Write-CodexLog "Get-CodexStats: live usage merge failed - $($_.Exception.Message)"
     }
+
+    if ($stopped) {
+        if (-not $script:CodexStats) { $script:CodexStats = Measure-CodexStats @() (Get-Date) }
+        $script:CodexStats.CatchingUp = $true
+        $script:CodexStats.LiveOk = $liveOk
+    }
+}
+
+# Fields of a Codex result that come from the live usage endpoint.
+$script:CodexLiveStatKeys = @('WeekPct', 'WeekResetsAt', 'FiveHourPct', 'FiveHourResetsAt', 'ResetsAvailable', 'PlanType', 'Credits')
+
+# A poll that ran out of parse budget carries only the live limits
+# (CatchingUp). Keep the last complete local totals on screen and lay the live
+# numbers over them, instead of blanking the Codex card until the logs are read.
+function Merge-CodexStatsResult($Previous, $Next) {
+    if (-not $Next -or -not $Next.CatchingUp) { return $Next }
+    if (-not $Previous -or $Previous.CatchingUp) { return $Next }
+    $merged = @{}
+    foreach ($k in @($Previous.Keys)) { $merged[$k] = $Previous[$k] }
+    if ($Next.LiveOk) {
+        foreach ($k in $script:CodexLiveStatKeys) {
+            if (($k -eq 'PlanType' -or $k -eq 'Credits') -and $null -eq $Next[$k]) { continue }
+            $merged[$k] = $Next[$k]
+        }
+    }
+    return $merged
 }

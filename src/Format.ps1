@@ -33,10 +33,12 @@ function New-GradientBrush2([string]$c1, [string]$c2) {
     return $b
 }
 
-function Format-Reset([string]$iso) {
+# $iso: ISO string, [datetime] or [DateTimeOffset] (not typed [string]: that
+# cast loses the zone and the culture-safe format, see ConvertTo-DateTimeOffset).
+function Format-Reset($iso) {
     if (-not $iso) { return '' }
     try {
-        $span = [System.DateTimeOffset]::Parse($iso) - [System.DateTimeOffset]::Now
+        $span = (ConvertTo-DateTimeOffset $iso) - [System.DateTimeOffset]::Now
         if ($span.TotalSeconds -le 0) { return 'now' }
         # [math]::Floor - [int] rounds (banker's), which would tick the hours/days up a unit
         if ($span.TotalDays  -ge 1)   { return ('{0} {1}d {2}h'   -f $script:ResetGlyph, [int][math]::Floor($span.TotalDays), $span.Hours) }
