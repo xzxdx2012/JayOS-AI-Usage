@@ -1536,7 +1536,7 @@ function Show-NoticeCard($Note) {
     $inApp = ([string]$Note.agent -eq 'cowork')
     if ($inApp -and $spec.Hint) { $spec.Hint = 'Approve it in the Claude app.'; $spec.Secs = 60 }
     # A Cowork approval stays on screen until it has been answered.
-    $card.Sticky = ($inApp -and $kind -ne 'done' -and $kind -ne 'idle' -and [bool]$Note.sticky)
+    $card.Sticky = ($inApp -and $kind -eq 'permission' -and [bool]$Note.sticky)
     # Title row: a coloured mark, then the line.
     $row = New-Object System.Windows.Controls.DockPanel
     $dot = New-Object System.Windows.Controls.Border
@@ -1559,7 +1559,7 @@ function Show-NoticeCard($Note) {
         $sc.Margin = '0,8,0,4'
         [void]$stack.Children.Add($sc)
     }
-    if ($inApp -and $kind -ne 'done' -and $kind -ne 'idle' -and [bool]$Note.sticky) { $spec.Hint = 'Click below to jump to it, then press Allow there.' }
+    if ($card.Sticky) { $spec.Hint = 'Click below to jump to it, then press Allow there.' }
     if ($spec.Hint) {
         $h = New-ReqText (Get-ReqText $spec.Hint) 11.5 $spec.Color 'SemiBold'
         $h.Margin = '0,4,0,0'
@@ -1598,8 +1598,9 @@ function Open-NoticeTarget([string]$Id) {
         # The window may have opened since the card came out.
         if ($h -eq [IntPtr]::Zero) { $h = Find-ReqAgentWindow @($c.Req.chain) $agent }
     }
-    # A sticky card stays until the approval is answered in the app.
-    if (-not ($c -and $c.Sticky)) { Close-NoticeCard $Id }
+    # Clicking the button is the answer to the card: it goes back into the
+    # notch (a Cowork approval card too - the person has gone to the app).
+    Close-NoticeCard $Id
     if (-not (Show-ReqAgentWindow $h)) { [void](Start-ReqAgentApp $agent) }
 }
 
