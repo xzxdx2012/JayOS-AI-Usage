@@ -431,7 +431,7 @@ function Restore-UnifiedSections {
 # Runs in background runspaces. Each job dot-sources the modules it needs and
 # RETURNS plain data only; WPF objects are touched only on the dispatcher thread.
 $script:ClaudeUsageScript = {
-    param([string]$AppDir, [string]$CredPath, [string]$ErrLog, [int]$UsageTimeoutSec = 20, [bool]$ForceRefresh = $false)
+    param([string]$AppDir, [string]$CredPath, [string]$ErrLog, [int]$UsageTimeoutSec = 20, [bool]$ForceRefresh = $false, [bool]$IncludeCursor = $false)
 
     $script:AppDir   = $AppDir
     $script:CredPath = $CredPath
@@ -456,8 +456,10 @@ $script:ClaudeUsageScript = {
 
     Load-History
     Get-Usage -TimeoutSec $UsageTimeoutSec -Force:$ForceRefresh
-    Get-CursorUsage -TimeoutSec $UsageTimeoutSec
-    Get-CursorLocalStats -TimeoutSec $UsageTimeoutSec
+    if ($IncludeCursor) {
+        Get-CursorUsage -TimeoutSec $UsageTimeoutSec
+        Get-CursorLocalStats -TimeoutSec $UsageTimeoutSec
+    }
 
     @{
         Kind            = 'ClaudeUsage'
@@ -626,11 +628,12 @@ function Start-AllRefreshJobs {
         [string[]]$Kind
     )
 
+    $includeCursor = (Get-Command Test-DeveloperFeaturesEnabled -ErrorAction SilentlyContinue) -and (Test-DeveloperFeaturesEnabled)
     $jobs = @(
         @{
             Kind       = 'ClaudeUsage'
             Script     = $script:ClaudeUsageScript
-            Arguments  = @($script:AppDir, $script:CredPath, $script:ErrLog, $UsageTimeoutSec, [bool]$Force)
+            Arguments  = @($script:AppDir, $script:CredPath, $script:ErrLog, $UsageTimeoutSec, [bool]$Force, [bool]$includeCursor)
         }
         @{
             Kind       = 'ClaudeStats'
@@ -656,6 +659,7 @@ function Start-AllRefreshJobs {
 
     foreach ($jobSpec in $jobs) {
         $jobKind = $jobSpec.Kind
+        if ($jobKind -eq 'GrokUsage' -and (Get-Command Test-ProviderAvailable -ErrorAction SilentlyContinue) -and -not (Test-ProviderAvailable 'grok')) { continue }
 
         if ($script:pollJobs.ContainsKey($jobKind)) {
             $existing = $script:pollJobs[$jobKind]

@@ -307,7 +307,7 @@ $xaml = @'
           </Grid>
           <StackPanel Margin="0,24,0,0">
             <CheckBox x:Name="autostartBox" Style="{StaticResource Switch}" IsChecked="True"/>
-            <CheckBox x:Name="desktopBox" Style="{StaticResource Switch}" IsChecked="True"/>
+            <CheckBox x:Name="desktopBox" Style="{StaticResource Switch}" IsChecked="False"/>
           </StackPanel>
         </StackPanel>
 
@@ -750,10 +750,10 @@ if ($Silent) {
     try {
         if ($InstallDir) { $script:TargetDir = $InstallDir.TrimEnd('\') }
         # An update keeps the choices made at install time; a first install
-        # turns both on.
+        # enables autostart without creating a desktop shortcut.
         $existing = Test-Path -LiteralPath (Join-Path $script:TargetDir 'unified-overlay.ps1')
         $autostart = if ($existing) { Test-Path -LiteralPath $StartupLnk } else { $true }
-        $desktop = if ($existing) { Test-Path -LiteralPath $DesktopLnk } else { $true }
+        $desktop = if ($existing) { Test-Path -LiteralPath $DesktopLnk } else { $false }
         $installed = Invoke-Install $script:TargetDir $autostart $desktop
         Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\wscript.exe') -ArgumentList ('"' + (Join-Path $installed 'Start-Unified.vbs') + '"')
         exit 0

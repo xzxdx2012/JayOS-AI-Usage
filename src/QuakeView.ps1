@@ -293,8 +293,14 @@ function Update-QuakeView {
         Render-QuakeHeader ($script:window.FindName('qHeader'))
         Render-QuakeClaude ($script:window.FindName('qClaude'))
         Render-QuakeCodex  ($script:window.FindName('qCodex'))
-        Render-QuakeCursor ($script:window.FindName('qCursor'))
-        Render-QuakeGrok   ($script:window.FindName('qGrok'))
+        foreach ($key in @('cursor', 'grok')) {
+            $element = $script:window.FindName(('q' + $key.Substring(0,1).ToUpperInvariant() + $key.Substring(1)))
+            $available = Test-ProviderAvailable $key
+            if ($element) { $element.Visibility = if ($available) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed } }
+            if ($available) {
+                if ($key -eq 'cursor') { Render-QuakeCursor $element } else { Render-QuakeGrok $element }
+            }
+        }
         Render-QuakeFooter ($script:window.FindName('qFooter'))
     } catch {
         Write-Log ("Update-QuakeView failed: {0}`n{1}" -f $_.Exception.Message, $_.ScriptStackTrace)

@@ -1,11 +1,11 @@
-# JayOS AI Usage - notes for coding agents
+# JayOS AI Usage - development guidelines
 
 A Windows "notch" overlay (PowerShell 7 / Windows PowerShell 5.1 + WPF) that shows Claude, Codex,
 Cursor and Grok usage and answers Claude Code / Codex permission requests from the notch.
 Read docs/DEVELOPMENT.md before changing anything.
 
 ## Rules
-- The owner reads Chinese: write every summary, PR description and question to the owner in **Simplified Chinese**. Code, comments and commit messages stay in English.
+- The owner reads Chinese: write every summary, PR description and question to the owner in **Simplified Chinese**. Code, comments, commit messages, release notes, and public distribution documentation stay in English.
 - Keep Windows PowerShell 5.1 compatibility (no `??`, no ternary, no `-AsHashtable`, no `&&` in .ps1).
 - WPF cannot run in this Linux VM. Test logic with `pwsh` (PowerShell 7 is preinstalled or installable); do not try to start the UI.
 - Never read or print credential files (Claude `.credentials.json`, Codex `auth.json`) - tests use fixtures only.

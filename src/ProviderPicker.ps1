@@ -90,6 +90,7 @@ function Show-ProviderPickerDialog {
         @('claude', 'Claude')
     )) {
         $key = $pair[0]
+        if ((Get-Command Test-ProviderAvailable -ErrorAction SilentlyContinue) -and -not (Test-ProviderAvailable $key)) { continue }
         $cb = New-Object System.Windows.Forms.CheckBox
         $cb.Text = $pair[1]
         $cb.Checked = [bool]$map[$key]
@@ -122,12 +123,13 @@ function Show-ProviderPickerDialog {
 
     $out = @{}
     foreach ($key in @('claude', 'codex', 'cursor', 'grok')) {
-        $out[$key] = [bool]$checks[$key].Checked
+        # Retain hidden experimental-provider preferences across mode switches.
+        $out[$key] = if ($checks.ContainsKey($key)) { [bool]$checks[$key].Checked } else { [bool]$map[$key] }
     }
     # Keep at least one tile so the HUD isn't an empty shell.
     $any = $false
-    foreach ($v in $out.Values) { if ($v) { $any = $true; break } }
-    if (-not $any) { $out['cursor'] = $true }
+    foreach ($key in $checks.Keys) { if ($out[$key]) { $any = $true; break } }
+    if (-not $any) { $out['codex'] = $true }
     return $out
 }
 

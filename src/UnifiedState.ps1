@@ -18,6 +18,7 @@ $script:UnifiedCfgDefaults = @{
     ShowAlerts  = $true
     ShowGraph   = $false
     ShowRemaining = $true
+    DeveloperFeatures = $false     # experimental Cursor / Grok integration is opt-in
     AlertState = @{}
     ViewMode = 'Pinned'              # 'Pinned' | 'Quake'
     DropdownHotkey = 'Shift+F11'
@@ -72,6 +73,67 @@ function Initialize-UnifiedCfg {
     $script:Cfg['Sections'] = ConvertTo-UnifiedSectionsMap $script:Cfg['Sections']
 }
 
+function Test-DeveloperFeaturesEnabled {
+    return ($script:Cfg -and $script:Cfg['DeveloperFeatures'] -is [bool] -and $script:Cfg['DeveloperFeatures'])
+}
+
+function Test-ProviderAvailable([string]$Key) {
+    if ($Key -in @('cursor', 'grok')) { return [bool](Test-DeveloperFeaturesEnabled) }
+    return $true
+}
+
+function Get-AvailableProviderKeys {
+    return ,@(@('claude', 'codex', 'cursor', 'grok') | Where-Object { Test-ProviderAvailable $_ })
+}
+
+function New-DefaultUnifiedConfiguration {
+    $out = @{}
+    foreach ($key in $script:UnifiedCfgDefaults.Keys) {
+        $value = $script:UnifiedCfgDefaults[$key]
+        # Do not share mutable maps with the module's defaults.
+        $out[$key] = if ($value -is [System.Collections.IDictionary]) { @{} } else { $value }
+    }
+    $out['Sections'] = ConvertTo-UnifiedSectionsMap $null
+    return $out
+}
+
+# App preferences only: never delete credentials, usage history, caches, or
+# Windows shortcuts. Keep credit-reference observations, which are data rather
+# than preferences, so a reset cannot misrepresent an existing credit balance.
+function Reset-UnifiedPreferences {
+    $previous = $script:Cfg
+    $next = New-DefaultUnifiedConfiguration
+    foreach ($key in @('CodexCreditPeak', 'CodexCreditLast', 'CodexCreditEpoch')) {
+        if ($previous.ContainsKey($key)) { $next[$key] = $previous[$key] }
+    }
+    $backup = $null
+    if (Test-Path -LiteralPath $script:StatePath) {
+        $backup = $script:StatePath + '.before-defaults-' + [guid]::NewGuid().ToString('N') + '.bak'
+        Copy-Item -LiteralPath $script:StatePath -Destination $backup -ErrorAction Stop
+    }
+    $hooksWereEnabled = [bool]$previous['AiRequests']
+    if ($hooksWereEnabled -and (Get-Command Update-AllRequestHooks -ErrorAction SilentlyContinue)) {
+        $failed = Update-AllRequestHooks $false
+        if ($failed.Count -gt 0) {
+            try { [void](Update-AllRequestHooks $true) } catch { }
+            throw 'Request hooks could not be removed; preferences were not reset.'
+        }
+    }
+    try {
+        # Unlike Save-UnifiedState, this must report a failed write to the caller.
+        Write-StateJsonAtomic $script:StatePath $next
+    } catch {
+        if ($hooksWereEnabled -and (Get-Command Update-AllRequestHooks -ErrorAction SilentlyContinue)) {
+            try { [void](Update-AllRequestHooks $true) } catch { }
+        }
+        throw
+    }
+    $script:Cfg = $next
+    $script:UnifiedStateNeedsRepair = $false
+    if (Get-Command Stop-RequestWatcher -ErrorAction SilentlyContinue) { Stop-RequestWatcher }
+    return $backup
+}
+
 Initialize-UnifiedCfg
 
 function Save-UnifiedState {
@@ -111,7 +173,7 @@ function Load-UnifiedState {
         if (-not (Test-Path -LiteralPath $script:StatePath) -and -not (Test-Path -LiteralPath ($script:StatePath + '.bak'))) { return }
 
         $s = Read-StateJson $script:StatePath
-        foreach ($key in @('Left', 'Top', 'Opacity', 'StartHidden', 'ShowStats', 'Compact', 'Theme', 'ShowAlerts', 'ShowGraph', 'ViewMode', 'DropdownHotkey', 'ToggleOverlayHotkey', 'RefreshHotkey', 'DropdownMonitor', 'DropdownOpacity', 'DropdownHideOnFocusLoss', 'NotchPinButton', 'NotchPinned', 'Language', 'PanelBg', 'PanelBgRecent', 'CodexCreditPeak', 'CodexCreditLast', 'CodexCreditEpoch', 'ShowRemaining', 'AiRequests', 'AiRequestRemind', 'AiNotifyDone', 'AiNotifyAttention')) {
+        foreach ($key in @('Left', 'Top', 'Opacity', 'StartHidden', 'ShowStats', 'Compact', 'Theme', 'ShowAlerts', 'ShowGraph', 'ViewMode', 'DropdownHotkey', 'ToggleOverlayHotkey', 'RefreshHotkey', 'DropdownMonitor', 'DropdownOpacity', 'DropdownHideOnFocusLoss', 'NotchPinButton', 'NotchPinned', 'Language', 'PanelBg', 'PanelBgRecent', 'CodexCreditPeak', 'CodexCreditLast', 'CodexCreditEpoch', 'ShowRemaining', 'DeveloperFeatures', 'AiRequests', 'AiRequestRemind', 'AiNotifyDone', 'AiNotifyAttention')) {
             $prop = $s.PSObject.Properties[$key]
             if ($prop -and $null -ne $prop.Value) { $script:Cfg[$key] = $prop.Value }
         }
@@ -190,7 +252,7 @@ function Apply-UnifiedSettings {
     }
 
     foreach ($key in $script:UnifiedSectionKeys) {
-        Set-SectionVisible $key ([bool]$script:Cfg.Sections[$key])
+        Set-SectionVisible $key ([bool]$script:Cfg.Sections[$key] -and (Test-ProviderAvailable $key))
     }
 
     Apply-UnifiedTheme $script:Cfg.Theme

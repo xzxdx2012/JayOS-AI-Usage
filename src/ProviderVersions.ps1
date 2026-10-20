@@ -279,6 +279,7 @@ function Update-ProviderVersionLabels {
     foreach ($spec in $specs) {
         $el = $script:window.FindName($spec.El)
         if (-not $el) { continue }
+        if ((Get-Command Test-ProviderAvailable -ErrorAction SilentlyContinue) -and -not (Test-ProviderAvailable $spec.Provider)) { $spec.Show = $false }
         if (-not $spec.Show) {
             $el.Text = ''
             $el.Visibility = [System.Windows.Visibility]::Collapsed

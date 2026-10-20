@@ -1,93 +1,104 @@
 # JayOS · AI Usage
 
-A notch for Windows that shows how much of your AI limits you have used. It sits at the top of the screen like the notch on a Mac and covers **Claude**, **Codex**, **Cursor** and **Grok**.
+A Windows notch-style overlay for AI usage and permission requests. It lives at the top of the screen, shows account limits, and lets you respond to supported terminal requests without switching windows.
+
+**Version: 0.0.3 Beta** · Maintained by **xzxdx2012**.
 
 ## Install
 
-1. Download **`JayOS-AI-Usage-Setup-0.0.3-beta.exe`** from [Releases](../../releases).
-2. Double-click it and follow the wizard. You can pick the language (English, 中文, Français, 日本語, 한국어), the install folder, start with Windows and a desktop shortcut.
+1. Download **JayOS-AI-Usage-Setup-0.0.3-beta.exe** from [Releases](../../releases).
+2. Run the installer and choose a language and installation folder.
+3. **Start when Windows starts** is on by default. **Create a desktop shortcut** is off by default; enable it if wanted.
 
-No admin rights are needed. Everything installs for the current user.
+The installer runs per user and does not require administrator privileges. It prefers PowerShell 7, offers a portable runtime if needed, and falls back to Windows PowerShell 5.1 when unavailable.
 
-- **Silent install:** `JayOS-AI-Usage-Setup-0.0.3-beta.exe /S` installs with the default options and starts the app.
-- **"Windows protected your PC":** the exe is not code-signed yet. Click **More info → Run anyway**.
-- **PowerShell 7:** the app runs on PowerShell. If PowerShell 7 is not installed, setup downloads a portable copy into the install folder. Without internet it falls back to Windows PowerShell 5.1.
+- **Silent install:** `JayOS-AI-Usage-Setup-0.0.3-beta.exe /S`. A fresh install enables autostart without creating a desktop shortcut. An update preserves your existing shortcut choices.
+- **Portable ZIP:** extract `JayOS-AI-Usage-0.0.3-beta.zip`, then run `Start-Unified.vbs`. Use `Setup.vbs` if you want to install it.
+- **Uninstall:** Windows **Settings → Apps → Installed apps → JayOS AI Usage → Uninstall**.
+- **Checksums:** compare the downloaded files with `SHA256SUMS.txt`.
 
-Prefer a zip? Download `JayOS-AI-Usage-0.0.3-beta.zip`, unzip it and double-click `Setup.vbs`. To run without installing, double-click `Start-Unified.vbs`.
+The installer is not code-signed. Release archives never contain local credentials, usage caches, settings, history, logs, or pending request files.
 
-**Uninstall:** Windows **Settings → Apps → Installed apps → JayOS AI Usage → Uninstall**.
+## Use the notch
 
-## Use
+- Hover at the top center of the screen to show usage. Click to open the full panel.
+- Move away to fold it. Pin the notch to keep it open, or drag the expanded panel to another position.
+- Use the mouse wheel or provider headers to change the expanded card.
+- **Accounts** shows sign-in status and opens the appropriate sign-in or provider page.
+- **Refresh** updates usage. The update button checks for published releases.
+- The settings menu can be moved by dragging its title.
 
-- **Move the mouse to the top centre of the screen.** The notch drops down with the percentage used for each AI.
-- **Click the notch** to open the full panel. The first AI is expanded and the mouse wheel switches to the others.
-- **Move the mouse away** and the panel folds back. If you drag the panel somewhere else, use **−** in its top-left corner to send it back.
-- **Pin** (right side of the notch) keeps the notch out.
-- **Click an AI's icon** in the panel to open that app.
-- **Refresh** at the top of the panel updates right away. **Accounts** shows who is signed in and lets you sign in.
-- **Update** (the arrow next to Refresh) checks GitHub for a new version. A green dot means one is ready; click it to install. Your settings stay.
-- **Settings** (bottom right): change the background colour and language. Hover a colour to preview it, or open **Custom…** for a colour picker (drag the square and hue strip or type a hex code; the panel previews as you go and keeps your recent colours); the menu stays open while you pick, and closes when you click outside it. The menu can be dragged by its title.
+The native window height contracts to the visible notch when idle, rather than leaving a full-height transparent panel underneath. Horizontal stage coordinates remain unchanged so dragging and permission-card positioning stay compatible.
 
-**Codex credits:** once you have bought extra Codex credits (after the plan limit is used up), the Codex card adds a **Credits** row with what is left and a bar against your last top-up. Codex only reports the balance, so the top-up size is the highest balance seen since the last purchase.
+## Stable and experimental providers
 
-Bar colours follow usage, in the notch and in the panel: green while there is plenty left, through yellow from 60 % to red from 85 %. At 100 % the panel says the limit is used up.
+Claude Code and Codex are available in ordinary mode. Their display preferences can be changed in the provider chooser.
 
-**Claude sign-in renewal:** Claude Code's access token expires after a few hours. When it has, the app asks Claude Code to renew it by running it hidden with a one-line Haiku prompt (at most every 30 minutes, at most 3 times; a run that hangs is stopped after 3 minutes). Turn this off under **Settings → Panels & Features → Renew Claude sign-in automatically**; then an expired sign-in simply asks you to sign in again.
+**Cursor and Grok are experimental.** Enable **Settings → Panels & Features → Developer features (Cursor / Grok beta)** to reveal their account, provider, and platform entries and start their usage readers. The switch is **off by default**. Turning it off hides those entries and prevents subsequent experimental usage refreshes without deleting account data or saved provider choices. An already-running refresh may finish.
 
-## Answer Claude Code and Codex from the notch
+Experimental readers require compatible local installations and valid sign-ins. Enabling the switch alone does not sign you in or guarantee that a provider API is available.
 
-Turn on **Settings → Panels & Features → AI requests in the notch**. When Claude Code or Codex needs you, a card grows out of the notch with a chime, and you answer it there instead of switching to the terminal:
+## Display preferences
 
-- **Permission requests** (run a command, edit files, open a web page, …): **Allow**, **Deny** or **In terminal**. Claude Code also offers **Always allow**.
-- **Questions with options** (Claude Code): click an option. A single question is answered on the first click.
-- **"Shall I continue?"** at the end of a turn: **Continue** lets the agent carry on; **I'll reply myself** hands it back to the terminal.
+Under **Settings → Panels & Features**, **Show remaining (not used)** changes the meter presentation. Meter colors still reflect the proportion used: green below 60%, yellow from 60%, and red from 85%.
 
-Notices come out of the notch the same way and close on their own (hover to keep one open):
+Other options include compact layout, statistics, usage history, alerts, notch pinning, notifications, and request reminders. Appearance options include background color and language. Supported interface languages are English, Chinese, French, Japanese, and Korean; English is the default.
 
-- **Task finished**: when a turn ends without a question, with its last paragraph and a soft chime (Claude Code and Codex).
-- **Needs you in the terminal** (Claude Code): its own permission dialog, waiting for your input, a form to fill in; also an either/or question that "Continue" cannot answer.
+Purchased Codex credits appear as a separate row. The app uses observed balances to estimate the most recent top-up reference because the service does not expose an original purchase amount.
 
-Turn them on or off under **Settings → Panels & Features → Notify when a task finishes / Notify when the AI needs you**. Anything that needs an answer comes first; a notice gives way to it.
+Automatic Claude sign-in renewal can be disabled under **Panels & Features**. When enabled, it may run a short background CLI prompt after an expired sign-in, subject to retry and timeout limits.
 
-Several requests queue up and come out one at a time. If a card is not answered, the chime plays once more after 25 seconds; change or turn this off under **Settings → Panels & Features → Remind again if unanswered**. Whatever you do in the terminal still works: answering there, a timeout or a closed notch all fall back to the agent's normal prompt.
+## Answer permission requests
 
-How it connects:
+Enable **Settings → Panels & Features → AI requests in the notch**. Supported Claude Code and Codex requests appear as cards with Allow, Deny, or In terminal actions. Supported questions, completion notices, and attention notices can also appear there.
 
-- **Claude Code:** `PermissionRequest`, `Stop` and `Notification` hooks in `~/.claude/settings.json`.
-- **Codex:** the same two hooks in `~/.codex/hooks.json` (only if Codex is installed). Codex asks you to trust new hooks once: run `/hooks` in Codex and trust the JayOS entries. Codex does not let hooks add permanent rules or answer option questions, so its cards offer Allow / Deny / In terminal.
+Requests are queued. Answering in the terminal, closing the overlay, or a timeout returns control to the terminal's normal flow. The feature never approves a request on its own.
 
-Your other settings and hooks are kept, and a backup of each file is saved next to it (`*.jayos-backup`). Turning the option off or uninstalling removes the entries again.
+The integration registers only its own hooks in the providers' settings files. Existing unrelated hooks and settings are retained. Turning the feature off or uninstalling removes its own entries. Some providers require you to trust newly registered hooks in their terminal interface.
 
-## Requirements
+## Restore default settings
 
-- Windows 10 or 11
-- PowerShell 7 (installed automatically if missing) or Windows PowerShell 5.1
-- The AI tools you want to track, signed in on this computer (Claude Code, Codex CLI, Cursor, Grok)
+Open **Settings → System → Restore default settings** and confirm. The confirmation defaults to **No**.
+
+The reset restores appearance, language, view mode, hotkeys, provider preferences, notifications, request handling, and experimental-feature preferences. Request handling and developer features return to their default off state. Waiting permission requests return to the terminal rather than being approved.
+
+- Existing settings are backed up as `unified-overlay-state.json.before-defaults-<id>.bak`.
+- Custom footer artwork and the renewal opt-out marker are backed up before their defaults are restored.
+- Accounts, credentials, usage history, caches, and credit-reference observations are preserved.
+- Windows startup and desktop-shortcut choices are not changed by the app reset.
 
 ## Project layout
 
-| Path | What it is |
+| Path | Purpose |
 | --- | --- |
-| `unified-overlay.ps1` | Entry point |
-| `src/` | The app (WPF UI, data readers for each AI, settings) |
-| `icons/` | Icons for the four AIs |
-| `assets/` | App and tray icon, request chime |
-| `hooks/` | Claude Code hook for "AI requests in the notch" |
-| `Setup.ps1`, `Setup.vbs` | Setup wizard and uninstaller |
-| `Start-Unified.vbs` | Starts the app without a console window |
-| `installer/` | Source of the single-file `Setup.exe` (Go) |
-| `sqlite3.exe` | Used to read Cursor's local usage database |
+| `unified-overlay.ps1` | Entry point and refresh workers |
+| `src/` | UI, data readers, settings, and request handling |
+| `hooks/` | Permission and notification hook |
+| `assets/`, `icons/` | Artwork and notification sounds |
+| `Setup.ps1`, `Setup.vbs` | Installer and uninstaller |
+| `Start-Unified.vbs` | Console-free launcher |
+| `installer/` | Go single-file installer source and build scripts |
+| `tests/` | Fixture-based regression tests |
+| `sqlite3.exe` | Local database reader used by the experimental Cursor integration |
 
-Settings are saved in `unified-overlay-state.json` next to the app. Errors go to `unified-overlay-error.log`, which is kept under 2 MB.
+Settings are stored next to the installed application in `unified-overlay-state.json`. Errors are written to `unified-overlay-error.log` with size-limited rotation.
 
-## Build the installer
+## Build and test
 
-```sh
-go install github.com/akavel/rsrc@latest
-./installer/build.sh
+Requires Windows, Go 1.24 or later, PowerShell, and `rsrc`:
+
+```powershell
+go install github.com/akavel/rsrc@v0.10.2
+./installer/build.ps1 -OutputDirectory C:\build\jayos
 ```
 
-This creates `installer/JayOS-AI-Usage-Setup-<version>.exe`.
+The build packages an explicit application-file allowlist, tests payload extraction and content, and writes EXE, ZIP, and SHA-256 checksum files.
+
+Run each `tests/*.Tests.ps1` with both PowerShell 7 and Windows PowerShell 5.1. Native WPF bounds coverage can be run separately with:
+
+```powershell
+pwsh -STA -NoProfile -File tests/NotchWindowBounds.Wpf.ps1
+```
 
 ## License
 

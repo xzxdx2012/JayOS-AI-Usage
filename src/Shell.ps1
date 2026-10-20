@@ -1,12 +1,12 @@
 ﻿# Shell.ps1 - unified accordion window: XAML, theme application, animated section
 # toggle, and per-section render functions. The single window for the unified overlay.
 #
-# Consumes (speculative - defined by other legs / Claude modules):
+# Shared state supplied by the data and UI modules:
 #   $script:Themes (Leg F), $script:State/$script:Stats/$script:BarTrackWidth/$script:WarnPct/
 #   $script:CritPct + Fmt-Tok/Fmt-Money/Format-Reset/NewBrush/New-GradientBrush/New-GradientBrush2
-#   (Claude modules), $script:CodexStats (Leg A), $script:LiveData/$script:LocalData/
+#   (shared formatting), $script:CodexStats, $script:LiveData/$script:LocalData/
 #   $script:SummaryData/$script:AuthState/$script:CursorErrMsg/$script:CursorLastFetch/Fmt-Num
-#   (Leg B), $script:window/Save-UnifiedState (Leg E).
+#   $script:window/Save-UnifiedState.
 
 # ---------------------------------------------------------------------------
 # XAML - merged accordion window (Claude / Codex / Cursor sections)
@@ -2440,6 +2440,10 @@ function Update-AllSections {
     # Worst status among the sections the user enabled. A hidden provider -
     # Claude included - never surfaces its auth/stale/error in the top chrome.
     $enabled = if ($script:Cfg) { $script:Cfg.Sections } else { $null }
+    if (Get-Command Get-SectionVisible -ErrorAction SilentlyContinue) {
+        $enabled = @{}
+        foreach ($key in @('claude', 'codex', 'cursor', 'grok')) { $enabled[$key] = Get-SectionVisible $key }
+    }
     $worst = Get-WorstProviderStatus -Status $statuses -Enabled $enabled
     $chromeStatus = $worst.Status
     if ($dot) { $dot.Fill = NewBrush (Get-StatusDotColor $chromeStatus) }

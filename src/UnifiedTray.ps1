@@ -359,6 +359,10 @@ $script:I18nText = @{
     'Threshold alerts' = @{ zh = '用量提醒'; ja = 'しきい値通知'; fr = 'Alertes de seuil'; ko = '사용량 알림' }
     'Show history graph' = @{ zh = '显示历史曲线'; ja = '履歴グラフを表示'; fr = 'Afficher l''historique'; ko = '기록 그래프 표시' }
     'Show remaining (not used)' = @{ zh = '显示剩余（而非已用）'; ja = '残量を表示（使用量ではなく）'; fr = 'Afficher le restant (pas l''utilisé)'; ko = '남은 양 표시 (사용량 대신)' }
+    'Developer features (Cursor / Grok beta)' = @{ zh = '开发版功能（Cursor / Grok 测试版）'; ja = '開発者向け機能（Cursor / Grok ベータ）'; fr = 'Fonctions de développement (Cursor / Grok bêta)'; ko = '개발 기능 (Cursor / Grok 베타)' }
+    'Restore default settings' = @{ zh = '恢复系统默认设置'; ja = '既定の設定に戻す'; fr = 'Rétablir les paramètres par défaut'; ko = '기본 설정 복원' }
+    'Restore app preferences to defaults? Accounts, usage history and Windows startup options will be kept.' = @{ zh = '要恢复应用的默认设置吗？账户、用量历史和 Windows 启动选项将保留。'; ja = 'アプリの設定を既定値に戻しますか？アカウント、使用履歴、Windows の起動設定は保持されます。'; fr = 'Rétablir les préférences par défaut ? Les comptes, l''historique et les options de démarrage de Windows seront conservés.'; ko = '앱 설정을 기본값으로 복원할까요? 계정, 사용 기록 및 Windows 시작 옵션은 유지됩니다.' }
+    'Default settings could not be restored. Your previous settings backup has been kept.' = @{ zh = '未能完成默认设置恢复。之前设置的备份已保留。'; ja = '既定の設定を復元できませんでした。以前の設定のバックアップは保持されています。'; fr = 'Impossible de terminer la restauration. La sauvegarde des anciens paramètres est conservée.'; ko = '기본 설정을 복원하지 못했습니다. 이전 설정의 백업은 보관되어 있습니다.' }
     'Pin button on notch' = @{ zh = '刘海图钉按钮'; ja = 'ノッチのピンボタン'; fr = 'Épingle sur l''encoche'; ko = '노치 고정 버튼' }
     'Open at login' = @{ zh = '开机启动'; ja = 'ログイン時に起動'; fr = 'Lancer au démarrage'; ko = '로그인 시 실행' }
     'Start hidden to tray' = @{ zh = '启动时隐藏到托盘'; ja = 'トレイに隠して起動'; fr = 'Démarrer réduit'; ko = '트레이로 숨겨서 시작' }
@@ -3151,6 +3155,7 @@ function Invoke-ProviderLogin {
         [Parameter(Mandatory = $true)][string]$CliName
     )
 
+    if ((Get-Command Test-ProviderAvailable -ErrorAction SilentlyContinue) -and -not (Test-ProviderAvailable $CliName)) { return }
     $resolved = Resolve-ProviderLoginCli $CliName
     if (-not $resolved) { return }
 
@@ -3203,6 +3208,11 @@ function Sync-ProviderLoginMenuItems {
     if (-not $script:loginItems) { return }
     foreach ($cli in @($script:loginItems.Keys)) {
         $item = $script:loginItems[$cli]
+        if ((Get-Command Test-ProviderAvailable -ErrorAction SilentlyContinue) -and -not (Test-ProviderAvailable $cli)) {
+            $item.Visible = $false
+            continue
+        }
+        $item.Visible = $true
         $resolved = Resolve-ProviderLoginCli $cli
         $item.Text = Get-ProviderLoginMenuCaption -CliName $cli -Resolved $resolved
         $item.Enabled = [bool]$resolved
@@ -3472,6 +3482,7 @@ function New-StripItem([string]$text, [scriptblock]$onClick) {
 }
 
 function Get-SectionVisible([string]$key) {
+    if ((Get-Command Test-ProviderAvailable -ErrorAction SilentlyContinue) -and -not (Test-ProviderAvailable $key)) { return $false }
     if (-not $script:Cfg -or -not $script:Cfg.Sections) { return $true }
 
     $sections = $script:Cfg.Sections
@@ -3491,8 +3502,77 @@ function Get-SectionExpanded([string]$key) {
 function Sync-SectionMenuItems {
     foreach ($key in $script:UnifiedSectionKeys) {
         if ($script:sectionItems.ContainsKey($key)) {
+            if (Get-Command Test-ProviderAvailable -ErrorAction SilentlyContinue) { $script:sectionItems[$key].Visible = Test-ProviderAvailable $key }
             $script:sectionItems[$key].Checked = Get-SectionVisible $key
         }
+    }
+    if ($script:platformItems) {
+        foreach ($key in $script:platformItems.Keys) { $script:platformItems[$key].Visible = Test-ProviderAvailable $key }
+    }
+}
+
+function Set-DeveloperFeatures([bool]$Enabled) {
+    $script:Cfg['DeveloperFeatures'] = $Enabled
+    Save-UnifiedState
+    Apply-UnifiedSettings
+    Sync-SectionMenuItems
+    Sync-ProviderLoginMenuItems
+    Sync-MenuToggleStates
+    if ($script:accountsStrip) { $script:accountsStrip.Close() }
+    if ($script:AccordionKey -and -not (Test-ProviderAvailable $script:AccordionKey)) {
+        $keys = Get-EnabledProviderKeys
+        if ($keys.Count -gt 0) { Set-AccordionCard $keys[0] -NoLayout }
+    }
+    Update-AllSections
+    Resize-ToContent
+    if ($Enabled -and (Get-Command Start-AllRefreshJobs -ErrorAction SilentlyContinue)) {
+        Start-AllRefreshJobs -Kind @('ClaudeUsage', 'GrokUsage') -Force
+    }
+}
+
+function Invoke-RestoreDefaultSettings {
+    $lang = Get-UiLanguage
+    $title = Convert-I18nString 'Restore default settings' $lang
+    $message = Convert-I18nString 'Restore app preferences to defaults? Accounts, usage history and Windows startup options will be kept.' $lang
+    $answer = [System.Windows.Forms.MessageBox]::Show($message, $title,
+        [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Question,
+        [System.Windows.Forms.MessageBoxDefaultButton]::Button2)
+    if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+    try {
+        $oldMode = [string]$script:Cfg['ViewMode']
+        # Back up non-JSON appearance preferences before returning to defaults.
+        foreach ($command in @('Get-OverlayBrandPngPath', 'Get-ClaudeCliRenewalOffPath')) {
+            if (Get-Command $command -ErrorAction SilentlyContinue) {
+                $path = & $command
+                if (Test-Path -LiteralPath $path) { Copy-Item -LiteralPath $path -Destination ($path + '.before-defaults-' + [guid]::NewGuid().ToString('N') + '.bak') -ErrorAction Stop }
+            }
+        }
+        [void](Reset-UnifiedPreferences)
+        if ($script:ColorPicker) { Close-ColorPicker }
+        $script:PinnedLeft = $null; $script:PinnedTop = $null
+        if ($oldMode -in @('Quake', 'Dropdown')) { Exit-DropdownMode }
+        Stop-NotchRendering
+        Set-NotchRest
+        Import-AlertStateFromConfig
+        if (Get-Command Set-ClaudeCliRenewalEnabled -ErrorAction SilentlyContinue) { Set-ClaudeCliRenewalEnabled $true }
+        if (Get-Command Invoke-ResetFooterBrand -ErrorAction SilentlyContinue) { Invoke-ResetFooterBrand }
+        Apply-UnifiedSettings
+        Restore-UnifiedSections
+        Resize-ToContent
+        Position-IslandWindow
+        Set-NotchBackdropColor ([string]$script:Cfg.PanelBg)
+        Register-OverlayHotkeys
+        Set-UiLanguage ([string]$script:Cfg.Language)
+        Sync-ProviderLoginMenuItems
+        Sync-ViewModeMenuItems
+        Sync-MenuToggleStates
+        Sync-AppearanceMenus
+        Save-UnifiedState
+    } catch {
+        Write-NotchLog "restore defaults failed: $($_.Exception.Message)"
+        [void][System.Windows.Forms.MessageBox]::Show(
+            (Convert-I18nString 'Default settings could not be restored. Your previous settings backup has been kept.' $lang),
+            $title, [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
     }
 }
 
@@ -3731,10 +3811,12 @@ Add-Separator
 # Official vendor pages — one shared shape (provider → Usage + Docs). Hidden
 # HUD tiles still keep their links. Labels/URLs vary per vendor on purpose.
 $miPlatforms = New-StripItem 'Platforms' $null
+$script:platformItems = @{}
 $linkGroups = Get-ProviderLinkMenuShape | Group-Object ProviderId
 foreach ($group in $linkGroups) {
     $first = @($group.Group)[0]
     $sub = New-StripItem $first.ProviderLabel $null
+    $script:platformItems[$first.ProviderId] = $sub
     foreach ($link in @($group.Group)) {
         $providerId = $link.ProviderId
         $kind = $link.Kind
@@ -4017,6 +4099,12 @@ $script:miRemaining = New-StripItem 'Show remaining (not used)' {
 $script:miRemaining.Checked = [bool]$script:Cfg.ShowRemaining
 [void]$script:ctxStrip.Items.Add($script:miRemaining)
 
+$script:miDeveloper = New-StripItem 'Developer features (Cursor / Grok beta)' {
+    Set-DeveloperFeatures (-not (Test-DeveloperFeaturesEnabled))
+}
+$script:miDeveloper.Checked = Test-DeveloperFeaturesEnabled
+[void]$script:ctxStrip.Items.Add($script:miDeveloper)
+
 $script:miNotchPin = New-StripItem 'Pin button on notch' {
     Set-NotchPinButton (-not (Test-NotchPinButtonEnabled))
     $script:miNotchPin.Checked = (Test-NotchPinButtonEnabled)
@@ -4093,6 +4181,7 @@ $miSH = New-StripItem 'Start hidden to tray' {
 }
 $miSH.Checked = [bool]$script:Cfg.StartHidden
 [void]$script:ctxStrip.Items.Add($miSH)
+[void]$script:ctxStrip.Items.Add((New-StripItem 'Restore default settings' { Invoke-RestoreDefaultSettings }))
 Add-Separator
 
 # Window
@@ -4234,12 +4323,14 @@ Add-Separator
             @('Language', 'IcoGlobe')) },
         @{ Title = 'Panels & Features'; Icon = 'IcoSliders'; Toggle = $true; Items = @(
             @('Show stats panel', 'IcoBars'), @('Compact mode', 'IcoList'),
+            @('Show remaining (not used)', 'IcoBars'), @('Developer features (Cursor / Grok beta)', 'IcoGear'),
             @('Threshold alerts', 'IcoBell'), @('Show history graph', 'IcoTrend'),
             @('Pin button on notch', 'IcoPin'), @('AI requests in the notch', 'IcoChat'),
             @('Notify when a task finishes', 'IcoBell'), @('Notify when the AI needs you', 'IcoBell'),
             @('Remind again if unanswered', 'IcoBell'), @('Renew Claude sign-in automatically', 'IcoPower')) },
         @{ Title = 'System'; Icon = 'IcoPower'; Items = @(
             @('Open at login', 'IcoPower', $true), @('Start hidden to tray', 'IcoEyeOff', $true),
+            @('Restore default settings', 'IcoGear'),
             @('Minimize to tray', 'IcoMinus'), @('Check for updates', 'IcoDownload'),
             @(("Version {0}" -f $script:DisplayVersion), 'IcoInfo')) }
     )
@@ -4327,6 +4418,7 @@ Add-Separator
         'Show stats panel' = 'ShowStats'; 'Compact mode' = 'Compact'; 'Threshold alerts' = 'ShowAlerts'
         'Show history graph' = 'ShowGraph'; 'Start hidden to tray' = 'StartHidden'
         'Show remaining (not used)' = 'ShowRemaining'
+        'Developer features (Cursor / Grok beta)' = 'DeveloperFeatures'
         'Pin button on notch' = 'NotchPinButton'; 'AI requests in the notch' = 'AiRequests'
         'Notify when a task finishes' = 'AiNotifyDone'; 'Notify when the AI needs you' = 'AiNotifyAttention'
     }
@@ -4451,6 +4543,7 @@ Register-MenuKeepOpen $script:ctxStrip
 # sign in (CLI login), or to install / open its page when there is no CLI.
 # ---------------------------------------------------------------------------
 function Invoke-AccountAction([string]$Key) {
+    if (-not (Test-ProviderAvailable $Key)) { return }
     try {
         $name = $script:ProviderMeta[$Key].Name
         if ($Key -eq 'cursor') {
@@ -4506,7 +4599,7 @@ function Show-AccountsMenu {
     $hdr.Font = New-Object System.Drawing.Font('Segoe UI Semibold', 7.75)
     $hdr.Padding = New-Object System.Windows.Forms.Padding(0, 6, 0, 0)
     [void]$m.Items.Add($hdr)
-    foreach ($key in @('claude', 'codex', 'cursor', 'grok')) {
+    foreach ($key in (Get-AvailableProviderKeys)) {
         $state = Get-AccountState $key
         $label = $script:ProviderMeta[$key].Name
         if (-not (Get-SectionVisible $key)) { $label += '  (hidden)' }
