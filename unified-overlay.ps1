@@ -392,6 +392,7 @@ Remove-StaleOverlayArtifacts
 . (Join-Path $script:AppDir 'src\Dropdown.ps1')
 . (Join-Path $script:AppDir 'src\Update.ps1')
 . (Join-Path $script:AppDir 'src\UnifiedTray.ps1')
+. (Join-Path $script:AppDir 'src\Requests.ps1')
 
 # ---------------------------------------------------------------------------
 # Runtime state (declared after modules so $xaml from Shell.ps1 is available)
@@ -936,6 +937,7 @@ $script:pollTimer.Start()
 $script:jobTimer.Start()
 $script:tickTimer.Start()
 $script:credentialTimer.Start()
+try { Initialize-AiRequests } catch { Write-Log "AI requests: start failed - $($_.Exception.Message)" }
 
 # Let WPF paint the notch before starting process jobs and network work.
 [void]$script:window.Dispatcher.BeginInvoke(

@@ -1,4 +1,4 @@
-# UnifiedState.ps1 - settings persistence, window positioning, and clipboard export
+﻿# UnifiedState.ps1 - settings persistence, window positioning, and clipboard export
 
 $script:UnifiedSectionKeys = @('claude', 'codex', 'cursor', 'grok')
 
@@ -29,6 +29,10 @@ $script:UnifiedCfgDefaults = @{
     NotchPinned = $false             # notch stays out when the pointer leaves
     Language = 'en'                  # 'en' | 'zh' | 'ja'
     PanelBg = '#1A1A1E'              # panel background colour
+    AiRequests = $false              # Claude Code requests answered from the notch (Requests.ps1)
+    AiRequestRemind = 25             # chime again after this many seconds unanswered; 0 = off
+    AiNotifyDone = $true             # notice when an agent finishes a task
+    AiNotifyAttention = $true        # notice when an agent waits for you in its terminal
 }
 
 function ConvertTo-UnifiedSectionsMap($value) {
@@ -104,7 +108,7 @@ function Load-UnifiedState {
         if (-not (Test-Path $script:StatePath)) { return }
 
         $s = Get-Content $script:StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
-        foreach ($key in @('Left', 'Top', 'Opacity', 'StartHidden', 'ShowStats', 'Compact', 'Theme', 'ShowAlerts', 'ShowGraph', 'ViewMode', 'DropdownHotkey', 'ToggleOverlayHotkey', 'RefreshHotkey', 'DropdownMonitor', 'DropdownOpacity', 'DropdownHideOnFocusLoss', 'NotchPinButton', 'NotchPinned', 'Language', 'PanelBg')) {
+        foreach ($key in @('Left', 'Top', 'Opacity', 'StartHidden', 'ShowStats', 'Compact', 'Theme', 'ShowAlerts', 'ShowGraph', 'ViewMode', 'DropdownHotkey', 'ToggleOverlayHotkey', 'RefreshHotkey', 'DropdownMonitor', 'DropdownOpacity', 'DropdownHideOnFocusLoss', 'NotchPinButton', 'NotchPinned', 'Language', 'PanelBg', 'PanelBgRecent', 'CodexCreditPeak', 'CodexCreditLast', 'AiRequests', 'AiRequestRemind', 'AiNotifyDone', 'AiNotifyAttention')) {
             $prop = $s.PSObject.Properties[$key]
             if ($prop -and $null -ne $prop.Value) { $script:Cfg[$key] = $prop.Value }
         }

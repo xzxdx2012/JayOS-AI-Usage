@@ -133,7 +133,7 @@ function Convert-CodexCacheRecords {
 # the reaper killed the job before it could save - so Codex went blank for good.
 # The cache now remembers how far into each file it has read, plus the parser
 # state at that point, and each poll parses only the bytes appended since.
-$script:CodexCacheVersion = 4
+$script:CodexCacheVersion = 5   # 5: credit points
 # Bytes of each file's head that are fingerprinted, so a file replaced at the
 # same path (rather than appended to) is detected and parsed from scratch.
 $script:CodexHeadBytes = 4096
@@ -289,7 +289,20 @@ function New-CodexParseState {
         LastTokenDate  = $null
         LastRateLimits = $null
         TokenRecords   = [System.Collections.Generic.List[object]]::new()
+        # Credit balance turning points (top-ups, running out) for the
+        # "Credits" bar; steady spending in between is not kept.
+        CreditPoints   = [System.Collections.Generic.List[object]]::new()
     }
+}
+
+function Add-CodexCreditPoint($State, $Credits, $Date) {
+    $cs = ConvertFrom-CodexCredits $Credits
+    if (-not $cs -or -not $Date) { return }
+    $b = if ($null -ne $cs.Balance) { [double]$cs.Balance } else { 0.0 }
+    $pts = $State.CreditPoints
+    $last = if ($pts.Count -gt 0) { $pts[$pts.Count - 1] } else { $null }
+    $keep = (-not $last) -or ([bool]$last.Has -ne $cs.Has) -or ($b -gt [double]$last.Balance + 0.5) -or ($b -le 0 -and [double]$last.Balance -gt 0)
+    if ($keep) { $pts.Add(@{ Date = $Date; Has = $cs.Has; Balance = $b }) }
 }
 
 # Folds session-log lines into $State, one at a time and in order.
@@ -333,6 +346,7 @@ function Update-CodexParseState {
                 $State.HasUsage = $true
                 $State.LastRateLimits = $limits
                 $tokenDate = Convert-CodexTimestamp $o.timestamp
+                if ($tokenDate -and $limits -and $limits.credits) { Add-CodexCreditPoint $State $limits.credits $tokenDate }
                 if ($tokenDate) {
                     $State.LastTokenDate = $tokenDate
                     # Cumulative counters are snapshots. Attribute only their
@@ -435,6 +449,11 @@ function ConvertFrom-CodexCachedState {
     $state.LastTokenDate = Convert-CodexCacheDate $Saved.LastTokenDate
     $state.LastRateLimits = $Saved.LastRateLimits
     foreach ($r in (Convert-CodexCacheRecords $Saved.TokenRecords)) { $state.TokenRecords.Add($r) }
+    foreach ($pt in @($Saved.CreditPoints)) {
+        if (-not $pt) { continue }
+        $pd = Convert-CodexCacheDate $pt.Date
+        if ($pd) { $state.CreditPoints.Add(@{ Date = $pd; Has = [bool]$pt.Has; Balance = [double]$pt.Balance }) }
+    }
     return $state
 }
 
@@ -657,9 +676,39 @@ function Measure-CodexStats([object[]]$records, [datetime]$today, $rateLimits = 
         WeekResetsAt     = $weekResetsAt
         ResetsAvailable  = $null
         PlanType         = $null
+        Credits          = $(if ($rateLimits) { ConvertFrom-CodexCredits $rateLimits.credits } else { $null })
         Model            = $currentModel
         LastComputed     = (Get-Date -Format 'yyyy-MM-dd HH:mm')
     }
+}
+
+# Credits bought for Codex once the plan limit is used up (ChatGPT sells them
+# through Link). Codex reports them next to the rate limits as
+# { has_credits, unlimited, balance }; balance is a decimal string.
+function ConvertFrom-CodexCredits($Credits) {
+    if (-not $Credits) { return $null }
+    $balance = $null
+    try { if ($null -ne $Credits.balance -and [string]$Credits.balance -ne '') { $balance = [double]::Parse([string]$Credits.balance, [Globalization.CultureInfo]::InvariantCulture) } } catch { }
+    return @{
+        Has       = [bool]$Credits.has_credits
+        Unlimited = [bool]$Credits.unlimited
+        Balance   = $balance
+    }
+}
+
+# The size of the current top-up, from the credit balances the session logs
+# recorded over time (oldest first): a spent-out balance starts over, and a
+# balance that goes up is a new top-up. $null when no credits are seen.
+function Get-CodexCreditPeak($Samples) {
+    $peak = $null; $prev = $null
+    foreach ($x in @($Samples | Sort-Object { $_.Date })) {
+        $b = $x.Balance
+        if (-not $x.Has -or $null -eq $b -or $b -le 0) { $peak = $null; $prev = $null; continue }
+        if ($null -eq $peak -or ($null -ne $prev -and $b -gt $prev + 0.5)) { $peak = $b }
+        elseif ($b -gt $peak) { $peak = $b }
+        $prev = $b
+    }
+    return $peak
 }
 
 # Parse the Codex live usage endpoint (chatgpt.com/backend-api/wham/usage)
@@ -708,6 +757,7 @@ function ConvertFrom-CodexUsageResponse($obj) {
         FiveHourResetsAt = $fiveHourResetsAt
         ResetsAvailable  = $resetsAvailable
         PlanType         = $obj.plan_type
+        Credits          = (ConvertFrom-CodexCredits $obj.credits)
     }
 }
 
@@ -823,6 +873,7 @@ function Get-CodexStats {
     $allRecords = [System.Collections.Generic.List[object]]::new()
     $latestRateLimits = $null
     $latestTokenDate = $null
+    $creditSamples = [System.Collections.Generic.List[object]]::new()
     $activeCache = @{}
 
     $budget = [System.Diagnostics.Stopwatch]::StartNew()
@@ -921,6 +972,11 @@ function Get-CodexStats {
             $allRecords.Add($r)
         }
         $fileTokenDate = $done.FileTokenDate
+        foreach ($pt in @($entry.State.CreditPoints)) { if ($pt) { $creditSamples.Add($pt) } }
+        if ($fileTokenDate -and $entry.State.LastRateLimits -and $entry.State.LastRateLimits.credits) {
+            $cs = ConvertFrom-CodexCredits $entry.State.LastRateLimits.credits
+            if ($cs) { $creditSamples.Add(@{ Date = $fileTokenDate; Has = $cs.Has; Balance = $cs.Balance }) }
+        }
         if ($fileTokenDate -and ((-not $latestTokenDate) -or ($fileTokenDate -gt $latestTokenDate))) {
             $latestTokenDate = $fileTokenDate
             $latestRateLimits = $entry.State.LastRateLimits
@@ -945,6 +1001,7 @@ function Get-CodexStats {
     try {
         if ($sessionDirs.Count -gt 0) {
             $script:CodexStats = Measure-CodexStats $allRecords.ToArray() (Get-Date) $latestRateLimits
+            $script:CodexStats.CreditPeak = Get-CodexCreditPeak $creditSamples
         }
     } catch {
         Write-CodexLog "Get-CodexStats: Measure-CodexStats failed - $($_.Exception.Message)"
@@ -965,6 +1022,7 @@ function Get-CodexStats {
             $script:CodexStats.FiveHourResetsAt = $live.FiveHourResetsAt
             $script:CodexStats.ResetsAvailable = $live.ResetsAvailable
             if ($live.PlanType) { $script:CodexStats.PlanType = $live.PlanType }
+            if ($live.Credits) { $script:CodexStats.Credits = $live.Credits }
         }
     } catch {
         Write-CodexLog "Get-CodexStats: live usage merge failed - $($_.Exception.Message)"
