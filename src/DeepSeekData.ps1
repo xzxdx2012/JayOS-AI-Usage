@@ -17,6 +17,8 @@
 $script:DeepSeekStats = $null
 
 function Get-DeepSeekApiKey {
+    # 1. The key saved by the sign-in wizard (encrypted for this Windows account).
+    if (Get-Command Read-DeepSeekSavedKey -ErrorAction SilentlyContinue) { $v = Read-DeepSeekSavedKey; if ($v) { return $v.Trim() } }
     foreach ($scope in 'Process', 'User', 'Machine') {
         $v = [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY', $scope)
         if ($v -and $v.Trim()) { return $v.Trim() }
@@ -217,13 +219,13 @@ function Update-DeepSeekPanel {
         (& $find 'deepseekBudgetPct').Foreground = NewBrush '#8E8E93'
         (& $find 'deepseekTotal').Text = if ($localOk) { ('今日  {0} tokens · {1} 次请求' -f (Format-DeepSeekTokens $s.TodayTokens), [int]$s.TodayRequests) } else { '今日 --' }
         (& $find 'deepseekBalance').Text = if ($localOk) { ('累计  {0} tokens' -f (Format-DeepSeekTokens $s.TotalTokens)) } else { '累计 --' }
-        $why = if ($s -and $s.BalanceError) { '余额读取失败：' + [string]$s.BalanceError }
-            elseif ($s -and $s.HarnessNote -eq 'harness-password') { 'DeepSeek Harness 设了访问口令，读不到余额' }
-            elseif ($s -and $s.HarnessNote -eq 'harness-password-wrong') { 'DeepSeek Harness 访问口令不对' }
-            elseif ($s -and $s.HarnessNote -eq 'harness-closed') { '打开 DeepSeek Harness 后显示余额' }
-            else { 'DeepSeek Harness 没有返回余额' }
+        $why = if ($s -and $s.BalanceError -match '无效') { 'API key 无效 · 点这里重新填写' }
+            elseif ($s -and $s.BalanceError) { '余额读取失败：' + [string]$s.BalanceError + ' · 点这里检查 key' }
+            elseif ($s -and $s.HarnessNote -eq 'harness-password') { 'Harness 设了访问口令 · 点这里填写 API key' }
+            elseif ($s -and $s.HarnessNote -eq 'harness-password-wrong') { 'Harness 访问口令不对 · 点这里填写 API key' }
+            else { '点这里填写 API key，显示余额' }
         (& $find 'deepseekRemaining').Text = $why
-        (& $find 'deepseekRemaining').ToolTip = '余额来源：打开 DeepSeek Harness（由它向 DeepSeek 查询，本程序拿不到密钥），或自己设置环境变量 DEEPSEEK_API_KEY。'
+        (& $find 'deepseekRemaining').ToolTip = '打开向导：创建并粘贴 DeepSeek API key（也可以改用 DeepSeek Harness 读取）。'
         (& $find 'deepseekRemaining').Foreground = NewBrush '#8E8E93'
         (& $find 'deepseekStatCost').Text = '--'
         # Not connected to a balance source: grey, whatever the local stats say.
@@ -254,6 +256,27 @@ function Update-DeepSeekPanel {
     $model.Text = 'deepseek-flash'
     $model.ToolTip = $null
     Update-DeepSeekNotices $s
+    Set-DeepSeekConnectAffordance (-not $budget -or [bool]$budget.Stale)
+}
+
+# Without a live balance source, the hint line and the status pill open the
+# sign-in wizard (src\DeepSeekKeyWizard.ps1). Wired once; enabled per update.
+function Set-DeepSeekConnectAffordance([bool]$On) {
+    if (-not $script:window) { return }
+    foreach ($n in @('deepseekRemaining', 'deepseekStatusPill')) {
+        $el = $script:window.FindName($n)
+        if (-not $el) { continue }
+        if (-not $script:DeepSeekConnectWired) { $script:DeepSeekConnectWired = @{} }
+        if (-not $script:DeepSeekConnectWired.ContainsKey($n)) {
+            $script:DeepSeekConnectWired[$n] = $true
+            $el.Add_MouseLeftButtonDown({ param($s, $e) if ($script:DeepSeekConnectOn) { $e.Handled = $true } })
+            $el.Add_MouseLeftButtonUp({ param($s, $e) if ($script:DeepSeekConnectOn -and (Get-Command Show-DeepSeekSignIn -ErrorAction SilentlyContinue)) { $e.Handled = $true; Show-DeepSeekSignIn } })
+        }
+        $el.Cursor = if ($On) { [System.Windows.Input.Cursors]::Hand } else { $null }
+        if ($n -eq 'deepseekRemaining') { $el.Foreground = NewBrush $(if ($On -and -not ($script:DeepSeekStats -and (Get-DeepSeekBudget))) { '#0A84FF' } else { '#8E8E93' }) }
+        if ($n -eq 'deepseekStatusPill') { $el.ToolTip = if ($On) { '连接 DeepSeek 余额' } else { $null } }
+    }
+    $script:DeepSeekConnectOn = $On
 }
 
 function Update-DeepSeekNotices($Stats) {

@@ -26,7 +26,7 @@ The installer is not code-signed. Release archives never contain local credentia
 - Use the mouse wheel or provider headers to change the expanded card. The panel reopens on the card you picked last, also after a restart.
 - With only one AI provider switched on, its card fills the full width and the mouse wheel turns pages instead.
 - **‹ ›**, the page dots or a sideways touchpad swipe switch between the **AI**, **Music** and **Shelf** pages.
-- **Accounts** shows sign-in status and opens the appropriate sign-in or provider page.
+- **Accounts** shows sign-in status. Choosing an AI - or a card's status pill while it is not signed in - opens a **connect wizard**: step 1 checks the tool is installed (with a link to the official install guide), step 2 starts the tool's own sign-in (`claude auth login`, `codex login`, the Grok Bot or Cursor app). It re-checks every 1.5 seconds and confirms when the sign-in arrives. Passwords never pass through this app.
 - **Refresh** updates usage. The update button checks for published releases.
 - The gear at the bottom right opens **Settings**: quick tiles on top, grouped options below, a page per group. Drag it by its background; it reopens under the gear. The tray icon keeps the classic menu.
 
@@ -46,7 +46,7 @@ The music helper reads Windows media sessions through the Microsoft WinRT projec
 
 The DeepSeek card leads with the **remaining balance**, read from DeepSeek's official API - never estimated:
 
-1. **Your API key** (recommended): create one at [platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys) and run `setx DEEPSEEK_API_KEY "sk-..."`. The key is read from the environment (or the first line of `deepseek-api-key.txt` in the app folder) and sent only to `api.deepseek.com`.
+1. **Your API key** (recommended): choose DeepSeek under **Accounts** (or click the card's hint) to open the **API key wizard**. It links to [platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys), checks the pasted key's format, asks DeepSeek once whether it works, and only then saves it - encrypted for your Windows account (DPAPI) in `deepseek-api-key.dat`. The key is sent only to `api.deepseek.com`. `DEEPSEEK_API_KEY` and `deepseek-api-key.txt` still work as alternatives.
 2. **DeepSeek Harness**, while it runs: the balance is read from its local server on `127.0.0.1`; Harness asks DeepSeek with its own key. If Harness has an access password, put it on the first line of `deepseek-harness-token.txt` in the app folder.
 
 The last real balance is remembered with the time it was read, so the card still shows it - marked as a **last read** value - when no source answers. Local token, request and session counts come from DeepSeek Harness's own session files.

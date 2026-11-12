@@ -397,6 +397,8 @@ Remove-StaleOverlayArtifacts
 . (Join-Path $script:AppDir 'src\MediaShelf.ps1')
 . (Join-Path $script:AppDir 'src\IslandPages.ps1')
 . (Join-Path $script:AppDir 'src\AppleSettings.ps1')
+. (Join-Path $script:AppDir 'src\DeepSeekKeyWizard.ps1')
+. (Join-Path $script:AppDir 'src\ProviderConnectWizard.ps1')
 . (Join-Path $script:AppDir 'src\DebugSnapshot.ps1')
 
 # ---------------------------------------------------------------------------

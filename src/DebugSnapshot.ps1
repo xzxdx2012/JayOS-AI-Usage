@@ -191,6 +191,10 @@ function Invoke-SnapshotTick {
             $script:DotRec = $null
             [void]$script:SnapQueue.Dequeue(); return
         }
+        if ($k -eq 'pills') {
+            Write-Log ('snapshot pills: ' + ((@('claude','codex','cursor','grok') | ForEach-Object { $pp = $script:window.FindName($_ + 'StatusPill'); '{0}={1}/{2}' -f $_, $(if ($script:ConnectPillWired -and $script:ConnectPillWired.ContainsKey($_) -and [object]::ReferenceEquals($script:ConnectPillWired[$_], $pp)) { 'wired' } else { 'NOT-wired' }), [string](Get-AccountState $_).Tag }) -join ' '))
+            [void]$script:SnapQueue.Dequeue(); return
+        }
         if ($k -eq 'dots') {
             $ui = $script:IslandPagesUi
             $ws = 'drawn ' + $(if ($ui.DotImage.Source) { '{0:0.#}x{1:0.#}' -f $ui.DotImage.Source.Width, $ui.DotImage.Source.Height } else { 'none' })

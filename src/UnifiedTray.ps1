@@ -4327,9 +4327,9 @@ function Sync-ProviderLoginMenuItems {
         }
         $item.Visible = $true
         if ($cli -eq 'deepseek') {
-            $installed = Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA 'Programs\DeepSeek Harness\DeepSeek Harness.exe')
-            $item.Text = if ($installed) { 'Open DeepSeek Harness sign-in' } else { 'DeepSeek Harness not installed' }
-            $item.Enabled = $installed
+            # The API-key wizard needs no DeepSeek Harness install.
+            $item.Text = 'DeepSeek Harness'
+            $item.Enabled = $true
             continue
         }
         if ($cli -eq 'grok') {
@@ -4342,7 +4342,8 @@ function Sync-ProviderLoginMenuItems {
         }
         $resolved = Resolve-ProviderLoginCli $cli
         $item.Text = Get-ProviderLoginMenuCaption -CliName $cli -Resolved $resolved
-        $item.Enabled = [bool]$resolved
+        # Not installed is still clickable: the wizard starts with installing.
+        $item.Enabled = [bool]$resolved -or [bool](Get-Command Show-ProviderConnectWizard -ErrorAction SilentlyContinue)
     }
 }
 
@@ -4996,12 +4997,14 @@ foreach ($key in (Get-AvailableProviderKeys)) {
 # Log in: spawn a visible CLI (`claude login` / `codex login` / `grok login`).
 Add-Separator
 $miLogin = New-StripItem 'Log in' $null
-$deepSeekLogin = New-StripItem 'DeepSeek Harness' { Open-ProviderApp 'deepseek' }
+# Signing in to DeepSeek = the API key wizard (src\DeepSeekKeyWizard.ps1);
+# Open-ProviderApp 'deepseek' is its fallback and its "改用 Harness" link.
+$deepSeekLogin = New-StripItem 'DeepSeek Harness' { if (Get-Command Show-DeepSeekSignIn -ErrorAction SilentlyContinue) { Show-DeepSeekSignIn } else { Open-ProviderApp 'deepseek' } }
 $script:loginItems['deepseek'] = $deepSeekLogin
 [void]$miLogin.DropDownItems.Add($deepSeekLogin)
 foreach ($cli in @('claude','codex')) {
     $providerLabel = [string]$script:ProviderMeta[$cli].Name
-    $sub = New-StripItem (Get-ProviderLoginMenuCaption -CliName $cli -Resolved $null) ([scriptblock]::Create("Invoke-ProviderLogin -Provider '$providerLabel' -CliName '$cli'"))
+    $sub = New-StripItem (Get-ProviderLoginMenuCaption -CliName $cli -Resolved $null) ([scriptblock]::Create("if ((Get-Command Show-ProviderConnectWizard -ErrorAction SilentlyContinue) -and (Show-ProviderConnectWizard '$cli')) { return }; Invoke-ProviderLogin -Provider '$providerLabel' -CliName '$cli'"))
     $script:loginItems[$cli] = $sub
     [void]$miLogin.DropDownItems.Add($sub)
 }
@@ -5703,9 +5706,13 @@ function Invoke-AccountAction([string]$Key) {
     try {
         $name = $script:ProviderMeta[$Key].Name
         if ($Key -eq 'deepseek') {
-            Open-ProviderApp 'deepseek'
+            if (Get-Command Show-DeepSeekSignIn -ErrorAction SilentlyContinue) { Show-DeepSeekSignIn } else { Open-ProviderApp 'deepseek' }
             return
         }
+        # Every other AI: the connect wizard (src\ProviderConnectWizard.ps1) -
+        # install check, then the tool's own sign-in, with live confirmation.
+        # The direct actions below remain the fallback.
+        if ((Get-Command Show-ProviderConnectWizard -ErrorAction SilentlyContinue) -and (Show-ProviderConnectWizard $Key)) { return }
         if ($Key -eq 'grok') {
             $desktop = if (Get-Command Get-GrokBotDesktopStatus -ErrorAction SilentlyContinue) { Get-GrokBotDesktopStatus } else { $null }
             if ($desktop -and $desktop.Installed) { Open-ProviderApp 'grok'; return }

@@ -36,3 +36,4 @@ deepseek-api-key.txt
 deepseek-harness-token.txt
 *.tmp
 __pycache__/
+deepseek-api-key.dat
