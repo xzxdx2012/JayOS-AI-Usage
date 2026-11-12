@@ -16,7 +16,7 @@ The island grows two new pages - **Music** and **Shelf** - gains a **DeepSeek Ha
   - via DeepSeek Harness's local server while it runs (optional access password in `deepseek-harness-token.txt`).
   - The last real balance is remembered with its time when no source answers. Local token, request and session counts come from Harness's own session files.
 - **Connect wizards.** Signing in is now guided for every AI:
-  - **Claude Code, Codex, Grok and Cursor:** step 1 checks the tool is installed (with a link to the official install guide), step 2 starts the tool's own sign-in (`claude auth login`, `codex login`, the Grok Bot or Cursor app). The wizard re-checks every 1.5 s, ticks each finished step and confirms when the sign-in arrives. It opens from **Accounts**, the **Log in** menu and a card's status pill while that AI is not signed in. Passwords never pass through this app.
+  - **Claude Code, Codex and Cursor:** step 1 checks the tool is installed (with a link to the official install guide), step 2 starts the tool's own sign-in (`claude auth login`, `codex login` or the Cursor app). The wizard re-checks every 1.5 s, ticks each finished step and confirms when the sign-in arrives. It opens from **Accounts**, the **Log in** menu and a card's status pill while that AI is not signed in. Passwords never pass through this app.
   - **DeepSeek:** an API-key wizard links to the DeepSeek platform, checks the pasted key's format (an ID pasted by mistake is caught), asks DeepSeek once whether the key works and shows the balance, then saves it encrypted for your Windows account (DPAPI) in `deepseek-api-key.dat`.
 - **Settings sheet.**  The footer gear opens a compact, iOS-style sheet: quick tiles on top, grouped rows with switches and drill-down pages, built from the same items as the classic menu (still on the tray icon). It can be dragged and reopens under the gear. A new **Island** group holds the page, music, lyrics, clipboard and animation options.
 
@@ -45,4 +45,4 @@ The island grows two new pages - **Music** and **Shelf** - gains a **DeepSeek Ha
 
 The installer is not code-signed. Packages do not include local credentials, API keys (plain or encrypted), settings, usage caches, history, logs, request files, music state or lyric caches. They now include `lib/winrt` (Microsoft-signed WinRT projection used by the music helper), which makes them larger than 0.0.3.
 
-The Music page needs PowerShell 7. Existing account data and settings are retained during an update. Cursor and Grok remain experimental and require valid local sign-ins.
+The Music page needs PowerShell 7. Existing account data and settings are retained during an update. Cursor remains experimental and requires a valid local sign-in. Grok Bot is not supported, because its desktop app does not publish usage data.
