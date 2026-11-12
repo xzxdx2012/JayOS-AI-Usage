@@ -64,6 +64,10 @@ $T = @{
         DoneTitle    = 'All set'
         DoneBody     = 'JayOS AI Usage is installed. Move the mouse to the top centre of the screen to see the notch; click it for the full panel.'
         LaunchNow    = 'Open JayOS AI Usage now'
+        Starting     = 'Starting JayOS AI Usage...'
+        StartingStep = 'The notch appears at the top of the screen in a moment ({0} s)'
+        Started      = 'JayOS AI Usage is running'
+        StartSlow    = 'Still starting - the notch will appear at the top of the screen on its own.'
         Back = 'Back'; Next = 'Next'; Install = 'Install'; Finish = 'Finish'; Cancel = 'Cancel'; Close = 'Close'
         FailTitle    = 'Installation failed'
         UninstTitle  = 'Remove JayOS AI Usage'
@@ -92,6 +96,10 @@ $T = @{
         DoneTitle    = '安装完成'
         DoneBody     = 'JayOS AI Usage 已安装。把鼠标移到屏幕顶部中间就会出现刘海，点击可以展开完整面板。'
         LaunchNow    = '现在打开 JayOS AI Usage'
+        Starting     = '正在启动 JayOS AI Usage…'
+        StartingStep = '刘海马上会出现在屏幕顶部（{0} 秒）'
+        Started      = 'JayOS AI Usage 已启动'
+        StartSlow    = '还在启动，稍后刘海会自己出现在屏幕顶部。'
         Back = '上一步'; Next = '下一步'; Install = '安装'; Finish = '完成'; Cancel = '取消'; Close = '关闭'
         FailTitle    = '安装失败'
         UninstTitle  = '卸载 JayOS AI Usage'
@@ -120,6 +128,10 @@ $T = @{
         DoneTitle    = 'Terminé'
         DoneBody     = "JayOS AI Usage est installé. Placez la souris en haut au centre de l'écran pour voir l'encoche ; cliquez dessus pour ouvrir le panneau."
         LaunchNow    = 'Ouvrir JayOS AI Usage maintenant'
+        Starting     = 'Démarrage de JayOS AI Usage...'
+        StartingStep = "L'encoche apparaît en haut de l'écran dans un instant ({0} s)"
+        Started      = 'JayOS AI Usage est lancé'
+        StartSlow    = "Démarrage en cours - l'encoche apparaîtra d'elle-même en haut de l'écran."
         Back = 'Retour'; Next = 'Suivant'; Install = 'Installer'; Finish = 'Terminer'; Cancel = 'Annuler'; Close = 'Fermer'
         FailTitle    = "Échec de l'installation"
         UninstTitle  = 'Désinstaller JayOS AI Usage'
@@ -148,6 +160,10 @@ $T = @{
         DoneTitle    = '完了'
         DoneBody     = 'JayOS AI Usage をインストールしました。マウスを画面上部の中央に移動するとノッチが表示され、クリックするとパネルが開きます。'
         LaunchNow    = '今すぐ JayOS AI Usage を開く'
+        Starting     = 'JayOS AI Usage を起動しています…'
+        StartingStep = 'まもなく画面上部にノッチが表示されます（{0} 秒）'
+        Started      = 'JayOS AI Usage が起動しました'
+        StartSlow    = '起動中です。ノッチは自動的に画面上部に表示されます。'
         Back = '戻る'; Next = '次へ'; Install = 'インストール'; Finish = '完了'; Cancel = 'キャンセル'; Close = '閉じる'
         FailTitle    = 'インストールに失敗しました'
         UninstTitle  = 'JayOS AI Usage のアンインストール'
@@ -176,6 +192,10 @@ $T = @{
         DoneTitle    = '설치 완료'
         DoneBody     = 'JayOS AI Usage가 설치되었습니다. 마우스를 화면 상단 가운데로 옮기면 노치가 나타나고, 클릭하면 전체 패널이 열립니다.'
         LaunchNow    = '지금 JayOS AI Usage 열기'
+        Starting     = 'JayOS AI Usage를 시작하는 중…'
+        StartingStep = '곧 화면 상단에 노치가 나타납니다 ({0}초)'
+        Started      = 'JayOS AI Usage가 실행되었습니다'
+        StartSlow    = '아직 시작 중입니다. 노치가 화면 상단에 자동으로 나타납니다.'
         Back = '뒤로'; Next = '다음'; Install = '설치'; Finish = '마침'; Cancel = '취소'; Close = '닫기'
         FailTitle    = '설치하지 못했습니다'
         UninstTitle  = 'JayOS AI Usage 제거'
@@ -677,6 +697,52 @@ foreach ($box in $ui.autostartBox, $ui.desktopBox, $ui.launchBox) {
     })
 }
 
+# Launch the app and keep a "starting" page up until the app reports that its
+# window is on screen (it writes unified-overlay.ready), so the first start -
+# which also builds the native-code cache - is not a silent wait.
+function Start-AppWithProgress([string]$AppDir) {
+    $ready = Join-Path $AppDir 'unified-overlay.ready'
+    Remove-Item -LiteralPath $ready -Force -ErrorAction SilentlyContinue
+    Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\wscript.exe') -ArgumentList ('"' + (Join-Path $AppDir 'Start-Unified.vbs') + '"')
+    Show-Page 1
+    $ui.closeButton.IsEnabled = $true
+    $ui.progressTitle.Text = S 'Starting'
+    $ui.progressStep.Text = (S 'StartingStep') -f 0
+    $ui.progressFill.Width = 6
+    $script:LaunchWatch = [Diagnostics.Stopwatch]::StartNew()
+    $script:LaunchReady = $ready
+    $script:LaunchTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $script:LaunchTimer.Interval = [TimeSpan]::FromMilliseconds(250)
+    $script:LaunchTimer.Add_Tick({
+        $sec = $script:LaunchWatch.Elapsed.TotalSeconds
+        $track = $ui.progressFill.Parent.ActualWidth
+        if (Test-Path -LiteralPath $script:LaunchReady) {
+            $script:LaunchTimer.Stop()
+            $ui.progressTitle.Text = S 'Started'
+            $ui.progressStep.Text = ''
+            $ui.progressFill.Width = [math]::Max(6, $track)
+            $close = New-Object System.Windows.Threading.DispatcherTimer
+            $close.Interval = [TimeSpan]::FromMilliseconds(900)
+            $close.Add_Tick({ param($s, $e) $s.Stop(); $win.Close() })
+            $close.Start()
+            return
+        }
+        if ($sec -ge 60) {
+            $script:LaunchTimer.Stop()
+            $ui.progressStep.Text = S 'StartSlow'
+            $close = New-Object System.Windows.Threading.DispatcherTimer
+            $close.Interval = [TimeSpan]::FromSeconds(4)
+            $close.Add_Tick({ param($s, $e) $s.Stop(); $win.Close() })
+            $close.Start()
+            return
+        }
+        $ui.progressStep.Text = (S 'StartingStep') -f [int][math]::Floor($sec)
+        # Eases toward 90 % so the bar keeps moving without promising a time.
+        $ui.progressFill.Width = [math]::Max(6, $track * 0.9 * (1 - [math]::Exp(-$sec / 4)))
+    })
+    $script:LaunchTimer.Start()
+}
+
 $script:Mode = if ($Uninstall) { 'uninstall' } else { 'install' }
 $script:Removed = $false
 Register-Tap $ui.closeButton { $win.Close() }
@@ -720,9 +786,10 @@ Register-Tap $ui.nextButton {
         }
         2 {
             if ($ui.launchBox.IsChecked -and $script:Installed) {
-                Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\wscript.exe') -ArgumentList ('"' + (Join-Path $script:Installed 'Start-Unified.vbs') + '"')
+                Start-AppWithProgress $script:Installed
+            } else {
+                $win.Close()
             }
-            $win.Close()
         }
     }
   } catch {

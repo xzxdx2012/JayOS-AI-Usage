@@ -1,4 +1,4 @@
-# Dropdown.ps1 - Quake-style drop-down view: a translucent panel that slides in
+﻿# Dropdown.ps1 - Quake-style drop-down view: a translucent panel that slides in
 # from the top edge of a chosen monitor on a global hotkey, and slides back out.
 #
 # This is an alternate presentation of the same window, not a second window. The
@@ -31,7 +31,7 @@ function Get-DropdownReferencedAssemblies {
 }
 
 if (-not ('AIUsageGlobalHotkey' -as [type])) {
-    Add-Type -ReferencedAssemblies (Get-DropdownReferencedAssemblies) -TypeDefinition @'
+    Add-TypeCached -ReferencedAssemblies (Get-DropdownReferencedAssemblies) -TypeDefinition @'
 using System;
 using System.Collections;
 using System.Runtime.InteropServices;

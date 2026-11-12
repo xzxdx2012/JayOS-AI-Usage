@@ -1,4 +1,4 @@
-# ---------------------------------------------------------------------------
+﻿# ---------------------------------------------------------------------------
 # Island pager. The open island shows one page at a time:
 #   AI 用量 (the provider cards)  |  音乐  |  Shelf   (+ 设置 behind the gear)
 # Pages slide sideways on a spring and cross-fade; the silhouette then glides

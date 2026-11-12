@@ -1,4 +1,4 @@
-# ---------------------------------------------------------------------------
+﻿# ---------------------------------------------------------------------------
 # DeepSeek sign-in wizard: connect the DeepSeek card to the official balance
 # with an API key the user creates and pastes in. Two steps in one small
 # sheet (same look as the settings sheet):

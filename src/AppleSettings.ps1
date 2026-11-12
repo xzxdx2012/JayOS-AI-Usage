@@ -1,4 +1,4 @@
-# ---------------------------------------------------------------------------
+﻿# ---------------------------------------------------------------------------
 # Settings, Apple style. The footer gear opens a popover laid out like iOS
 # Settings: big quick tiles on top, then grouped rows with coloured icons;
 # tapping a group pushes its page in from the right, "‹ 设置" goes back.

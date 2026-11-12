@@ -37,3 +37,4 @@ deepseek-harness-token.txt
 *.tmp
 __pycache__/
 deepseek-api-key.dat
+unified-overlay.ready

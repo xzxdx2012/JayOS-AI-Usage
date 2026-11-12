@@ -30,6 +30,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# Startup timing: logged once the window is on screen ("Startup: ...").
+$script:BootWatch = [Diagnostics.Stopwatch]::StartNew()
+$script:BootMarks = New-Object System.Collections.Generic.List[string]
+function Add-BootMark([string]$Name) { $script:BootMarks.Add(('{0} {1:0.0}s' -f $Name, $script:BootWatch.Elapsed.TotalSeconds)) }
 
 if ($PSVersionTable.PSVersion.Major -lt 5) {
     throw 'Windows PowerShell 5.1 or PowerShell 7+ is required.'
@@ -74,29 +78,30 @@ function Start-HiddenBackground {
 function Stop-ExistingInstance {
     $scriptPath = [System.IO.Path]::GetFullPath($PSCommandPath)
 
+    $oldPid = 0
     if (Test-Path $script:PidPath) {
-        try {
-            $oldPid = [int](Get-Content $script:PidPath -Raw)
-            if ($oldPid -ne $PID) {
-                $old = Get-CimInstance Win32_Process -Filter "ProcessId=$oldPid" -ErrorAction SilentlyContinue
-                if ($old -and $old.CommandLine -like "*$scriptPath*") {
-                    Stop-Process -Id $oldPid -Force -ErrorAction SilentlyContinue
-                    Start-Sleep -Milliseconds 500
-                }
-            }
-        } catch { }
+        try { $oldPid = [int](Get-Content $script:PidPath -Raw) } catch { }
         Remove-Item $script:PidPath -Force -ErrorAction SilentlyContinue
     }
 
+    # WMI is the slow part of startup (about 0.3-1 s per query, more on a
+    # freshly booted machine), so ask it once, and only when another
+    # PowerShell process exists at all.
+    $others = @([System.Diagnostics.Process]::GetProcessesByName('pwsh') + [System.Diagnostics.Process]::GetProcessesByName('powershell') |
+        Where-Object { $_.Id -ne $PID })
+    if ($others.Count -eq 0) { return }
+    $stopped = $false
     Get-CimInstance Win32_Process -Filter "Name = 'pwsh.exe' OR Name = 'powershell.exe'" -ErrorAction SilentlyContinue |
         Where-Object {
             $_.ProcessId -ne $PID -and
             $_.CommandLine -like "*$scriptPath*" -and
-            $_.CommandLine -like '*-Background*'
+            ($_.ProcessId -eq $oldPid -or $_.CommandLine -like '*-Background*')
         } |
         ForEach-Object {
             Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+            $stopped = $true
         }
+    if ($stopped) { Start-Sleep -Milliseconds 500 }
 }
 
 function Install-Autostart {
@@ -353,6 +358,7 @@ if (-not $Background) {
 # A fresh GUI start replaces any overlay already running from this folder
 # (previously only -Install did this, so relaunching stacked copies).
 Stop-ExistingInstance
+Add-BootMark 'previous-instance'
 
 try {
 
@@ -364,6 +370,7 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase,
 [void][System.Windows.SystemParameters]::PrimaryScreenWidth
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+Add-BootMark 'wpf'
 
 # ---------------------------------------------------------------------------
 # Load modules (dot-sourced into this scope)
@@ -400,6 +407,7 @@ Remove-StaleOverlayArtifacts
 . (Join-Path $script:AppDir 'src\DeepSeekKeyWizard.ps1')
 . (Join-Path $script:AppDir 'src\ProviderConnectWizard.ps1')
 . (Join-Path $script:AppDir 'src\DebugSnapshot.ps1')
+Add-BootMark 'modules'
 
 # ---------------------------------------------------------------------------
 # Runtime state (declared after modules so $xaml from Shell.ps1 is available)
@@ -854,6 +862,7 @@ Update-OverlayViews
 Apply-UnifiedSettings
 Restore-UnifiedSections
 Resize-ToContent
+Add-BootMark 'views'
 # Poll timer: every 180s kick off fresh async refreshes (skips sources still running).
 $script:pollTimer = New-Object System.Windows.Threading.DispatcherTimer
 $script:pollTimer.Interval = [TimeSpan]::FromSeconds(180)
@@ -971,6 +980,13 @@ function Show-UnifiedWindowWhenRendered {
             $opacity = [double]$script:Cfg.Opacity
         }
         $script:window.Opacity = $opacity
+        if (-not $script:BootLogged) {
+            $script:BootLogged = $true
+            Add-BootMark 'on-screen'
+            try { Write-Log ('Startup: ' + ($script:BootMarks -join ', ') + " ($($PSVersionTable.PSEdition) $($PSVersionTable.PSVersion))") } catch { }
+            # Setup's "starting" page waits for this file.
+            try { [IO.File]::WriteAllText((Join-Path $script:AppDir 'unified-overlay.ready'), [string]$PID) } catch { }
+        }
     })
     $script:window.Show()
     Resize-ToContent
@@ -1027,12 +1043,17 @@ if (-not (Build-And-Show)) {
     return
 }
 
+Add-BootMark 'shown'
 $script:pollTimer.Start()
 $script:jobTimer.Start()
 $script:tickTimer.Start()
 $script:credentialTimer.Start()
 $script:deepSeekNoticeTimer.Start()
-try { Initialize-AiRequests } catch { Write-Log "AI requests: start failed - $($_.Exception.Message)" }
+# The window paints only once the dispatcher runs, so anything that is not
+# needed for the first frame waits until after it.
+[void]$script:window.Dispatcher.BeginInvoke(
+    [System.Windows.Threading.DispatcherPriority]::Background,
+    [Action]{ try { Initialize-AiRequests } catch { Write-Log "AI requests: start failed - $($_.Exception.Message)" } })
 
 # Let WPF paint the notch before starting process jobs and network work.
 [void]$script:window.Dispatcher.BeginInvoke(

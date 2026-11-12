@@ -14,6 +14,49 @@ $script:WorkdayEndHour   = 18
 $script:AppVersion     = '0.0.4 Beta'
 
 # ---------------------------------------------------------------------------
+# Add-TypeCached - Add-Type -TypeDefinition, but compiled once per machine.
+#
+# Compiling C# at every start was the largest part of startup (about 0.2-0.5 s
+# per type, several seconds in all, more in a VM). The assembly is written to
+# lib\cache under a hash of the source, the referenced assemblies and the
+# runtime, and later starts just load it. Any cache problem falls back to the
+# plain in-memory Add-Type.
+# ---------------------------------------------------------------------------
+$script:TypeCacheDir = Join-Path (Split-Path -Parent $PSScriptRoot) 'lib\cache'
+function Add-TypeCached {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$TypeDefinition,
+        [string[]]$ReferencedAssemblies
+    )
+    $refs = @($ReferencedAssemblies | Where-Object { $_ })
+    $plain = @{ TypeDefinition = $TypeDefinition; ErrorAction = 'Stop' }
+    if ($refs.Count) { $plain.ReferencedAssemblies = $refs }
+    $dll = $null
+    try {
+        $key = '{0}|{1}|{2}|{3}' -f $PSVersionTable.PSEdition, [Environment]::Version, ($refs -join ';'), $TypeDefinition
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        try { $bytes = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($key)) } finally { $sha.Dispose() }
+        $hash = -join ($bytes[0..9] | ForEach-Object { $_.ToString('x2') })
+        $dll = Join-Path $script:TypeCacheDir "type-$hash.dll"
+        if (-not (Test-Path -LiteralPath $dll)) {
+            [void](New-Item -ItemType Directory -Force -Path $script:TypeCacheDir)
+            # Compile beside the final name, then move: another process (a
+            # background job) may be building the same file at the same time.
+            $tmp = Join-Path $script:TypeCacheDir "type-$hash-$PID.dll"
+            Add-Type @plain -OutputAssembly $tmp -OutputType Library
+            try { Move-Item -LiteralPath $tmp -Destination $dll -ErrorAction Stop }
+            catch { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
+        }
+        Add-Type -LiteralPath $dll -ErrorAction Stop
+        return
+    } catch {
+        try { if (Get-Command Write-Log -ErrorAction SilentlyContinue) { Write-Log "Type cache skipped ($dll): $($_.Exception.Message)" } } catch { }
+    }
+    Add-Type @plain
+}
+
+# ---------------------------------------------------------------------------
 # Shared provider health vocabulary
 #
 # Every provider reports auth health with the SAME words, so one predicate

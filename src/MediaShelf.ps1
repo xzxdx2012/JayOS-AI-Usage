@@ -1,4 +1,4 @@
-# ---------------------------------------------------------------------------
+﻿# ---------------------------------------------------------------------------
 # Island pages "Music" (now playing + synced lyrics) and "Shelf" (files dropped
 # on the island + recent clipboard text). The pager in src\IslandPages.ps1
 # hosts the pages; this file owns their data and content.
@@ -695,7 +695,7 @@ function Invoke-ShelfDrop($e) {
 function Initialize-ClipboardNative {
     if (([System.Management.Automation.PSTypeName]'AIUsageClipboardSeq').Type) { return }
     try {
-        Add-Type -TypeDefinition @'
+        Add-TypeCached -TypeDefinition @'
 using System.Runtime.InteropServices;
 public static class AIUsageClipboardSeq {
     [DllImport("user32.dll")] public static extern uint GetClipboardSequenceNumber();

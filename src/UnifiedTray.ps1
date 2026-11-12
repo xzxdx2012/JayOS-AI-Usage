@@ -146,7 +146,7 @@ $script:ProviderIconCache = @{}
 
 function Initialize-ProviderIconNative {
     if (([System.Management.Automation.PSTypeName]'AIUsageIconNative').Type) { return }
-    Add-Type -TypeDefinition @'
+    Add-TypeCached -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 public static class AIUsageIconNative {
@@ -773,7 +773,7 @@ $script:CpFieldHue = -1.0
 $script:CpFieldBitmap = $null
 function Update-CpField($w) {
     if (-not ('JayOSColorField' -as [type])) {
-        Add-Type -TypeDefinition @'
+        Add-TypeCached -TypeDefinition @'
 public static class JayOSColorField {
     static void Hsv(double h, double s, double v, out double r, out double g, out double b) {
         h = ((h % 360) + 360) % 360 / 60.0;
@@ -2860,7 +2860,7 @@ function Apply-IslandWindowBehavior {
     $script:window.Focusable = $false
 
     if (-not ([System.Management.Automation.PSTypeName]'AIUsageIslandNative').Type) {
-        Add-Type -TypeDefinition @'
+        Add-TypeCached -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 public static class AIUsageIslandNative {
@@ -2940,7 +2940,7 @@ function Initialize-NotchFastPath {
         if (-not ([System.Management.Automation.PSTypeName]'AIUsageNotchMath').Type) {
             $refs = @([System.Windows.Media.Geometry].Assembly.Location, [System.Windows.Point].Assembly.Location,
                       [System.Windows.Freezable].Assembly.Location) | Where-Object { $_ } | Select-Object -Unique
-            Add-Type -ReferencedAssemblies $refs -TypeDefinition @'
+            Add-TypeCached -ReferencedAssemblies $refs -TypeDefinition @'
 using System;
 using System.Windows;
 using System.Windows.Media;
@@ -3832,7 +3832,7 @@ function Ensure-NotchTimers {
 
 function Initialize-NotchNative {
     if (([System.Management.Automation.PSTypeName]'AIUsageNotchNative').Type) { return }
-    Add-Type -TypeDefinition @'
+    Add-TypeCached -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 public static class AIUsageNotchNative {
@@ -4387,7 +4387,7 @@ $_gfxPath = [System.Drawing.Graphics].Assembly.Location   # Graphics/SolidBrush/
 # ToolStripItem derives from Component, which lives in its own assembly on .NET 6+.
 $_cmPath  = [System.ComponentModel.Component].Assembly.Location
 $_menuRefs = @($_sdPath, $_swfPath, $_gfxPath, $_cmPath) | Where-Object { $_ } | Select-Object -Unique
-Add-Type -ReferencedAssemblies $_menuRefs -TypeDefinition @'
+Add-TypeCached -ReferencedAssemblies $_menuRefs -TypeDefinition @'
 using System.Drawing;
 using System.Windows.Forms;
 public class DarkColorTable : ProfessionalColorTable {
@@ -4542,7 +4542,7 @@ public class DarkMenuRenderer : ToolStripProfessionalRenderer {
 # Drag a popup menu by its title row. A timer follows the pointer while the
 # left button is held, so fast moves never outrun the item's mouse events.
 if (-not ([System.Management.Automation.PSTypeName]'AIUsageMenuDrag').Type) {
-Add-Type -ReferencedAssemblies $_menuRefs -TypeDefinition @'
+Add-TypeCached -ReferencedAssemblies $_menuRefs -TypeDefinition @'
 using System;
 using System.Drawing;
 using System.Windows.Forms;
@@ -5361,14 +5361,16 @@ function Sync-IslandMenuToggles {
     $script:MenuIconPx = [int][math]::Round(18 * $script:MenuDpi)
     $script:ctxStrip.ImageScalingSize = New-Object System.Drawing.Size($script:MenuIconPx, $script:MenuIconPx)
 
+    # Copies the rendered pixels straight into a GDI+ bitmap (Pbgra32 and
+    # 32bppPArgb share one memory layout). The former PNG encode/decode round
+    # trip cost ~15 ms per icon, most of the menu's share of startup.
     function ConvertTo-DrawingBitmap($Source) {
-        $enc = New-Object System.Windows.Media.Imaging.PngBitmapEncoder
-        $enc.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($Source))
-        $ms = New-Object System.IO.MemoryStream
-        $enc.Save($ms); $ms.Position = 0
-        $img = [System.Drawing.Image]::FromStream($ms)
-        $bmp = New-Object System.Drawing.Bitmap($img)
-        $img.Dispose(); $ms.Dispose()
+        $w = [int]$Source.PixelWidth; $h = [int]$Source.PixelHeight
+        $fmt = [System.Drawing.Imaging.PixelFormat]::Format32bppPArgb
+        $bmp = New-Object System.Drawing.Bitmap($w, $h, $fmt)
+        $data = $bmp.LockBits((New-Object System.Drawing.Rectangle(0, 0, $w, $h)), [System.Drawing.Imaging.ImageLockMode]::WriteOnly, $fmt)
+        try { $Source.CopyPixels([System.Windows.Int32Rect]::Empty, $data.Scan0, ($data.Stride * $h), $data.Stride) }
+        finally { $bmp.UnlockBits($data) }
         return $bmp
     }
 
@@ -5406,6 +5408,17 @@ function Sync-IslandMenuToggles {
 
     function New-MenuIcon([string]$Data, [string]$Hex = '#C7C7CC') {
         $px = $script:MenuIconPx
+        # Several rows share an icon; draw each one once. Items only display
+        # the bitmap, so sharing it is safe.
+        if (-not $script:MenuIconCache) { $script:MenuIconCache = @{} }
+        $cacheKey = '{0}|{1}|{2}' -f $px, $Hex, $Data
+        if ($script:MenuIconCache.ContainsKey($cacheKey)) { return $script:MenuIconCache[$cacheKey] }
+        $bmp = New-MenuIconBitmap $Data $Hex $px
+        $script:MenuIconCache[$cacheKey] = $bmp
+        return $bmp
+    }
+
+    function New-MenuIconBitmap([string]$Data, [string]$Hex, [int]$px) {
         $geo = [System.Windows.Media.Geometry]::Parse($Data)
         $pen = New-Object System.Windows.Media.Pen((NewBrush $Hex), 1.5)
         $pen.StartLineCap = 'Round'; $pen.EndLineCap = 'Round'; $pen.LineJoin = 'Round'
@@ -5638,7 +5651,7 @@ $script:ctxStrip.add_Opening({ try { Sync-AppearanceMenus; Invoke-MenuTranslate 
 
 # Rounded popup corners on Windows 11 (ignored elsewhere).
 if (-not ([System.Management.Automation.PSTypeName]'AIUsageDwm').Type) {
-    Add-Type -TypeDefinition @'
+    Add-TypeCached -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 public static class AIUsageDwm {

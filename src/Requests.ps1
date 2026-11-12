@@ -1386,7 +1386,7 @@ function Show-RequestCard($Req) {
 # ---------------------------------------------------------------------------
 function Initialize-ReqWindowNative {
     if (([System.Management.Automation.PSTypeName]'JayOSReqWindow').Type) { return }
-    Add-Type -TypeDefinition @'
+    Add-TypeCached -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 public static class JayOSReqWindow {
