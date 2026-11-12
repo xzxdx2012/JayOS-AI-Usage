@@ -29,11 +29,13 @@ The island grows two new pages - **Music** and **Shelf** - gains a **DeepSeek Ha
 - **Codex** shows the 5-hour limit only when the plan has one (verified against Plus and Pro Lite responses), and refreshes stale plan data after an upgrade.
 - **Sharper rendering.** The island window and its animation offsets snap to the monitor's pixel grid (crisp text at 125 % and other scalings); the settings sheet is opaque with no shadow effect, which removes the double image.
 - **Page indicator** is drawn as a single image with sub-pixel motion: no shiver while the pill moves, and no flicker on the way back to the first page.
-- **Setup wizard** no longer has an options page: the app starts with Windows and no desktop shortcut is created.
+- **Setup wizard** no longer has an options page: the app starts with Windows and no desktop shortcut is created. After **Finish** it shows a **Starting** page until the notch is on screen.
+- **Faster startup.** Native helper code is compiled once and cached in `lib\cache` instead of at every start, the check for an older running copy asks Windows once instead of twice (and not at all when no other PowerShell is running), menu icons are drawn once, and AI requests start after the first frame. Each start logs a `Startup:` timing line.
 
 ## Fixed
 
 - The version string is now **0.0.4 Beta**; the previous "0.04 Beta" could not be read by the update checker.
+- On Windows PowerShell 5.1 the Music/Shelf pages, the page switcher and the DeepSeek key wizard failed to load, because four scripts were saved without a byte-order mark and their Chinese text was misread. They now load on both PowerShell 5.1 and 7.
 - DeepSeek usage no longer re-reads all sessions on every refresh.
 - Removed a hard-coded user path from the DeepSeek reader.
 
