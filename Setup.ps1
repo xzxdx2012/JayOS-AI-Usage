@@ -17,7 +17,7 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
 
 $AppName      = 'JayOS AI Usage'
-$AppVersion   = '0.0.3 beta'
+$AppVersion   = '0.0.4 Beta'
 $Publisher    = 'JayOS'
 $RegKey       = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\JayOS.AIUsage'
 $SourceDir    = $PSScriptRoot
@@ -486,7 +486,9 @@ function Invoke-Install([string]$TargetDir, [bool]$Autostart, [bool]$Desktop) {
             $from = Join-Path $src $name
             if (Test-Path -LiteralPath $from) { Copy-Item -LiteralPath $from -Destination $dst -Force }
         }
-        foreach ($dir in 'src','icons','assets','hooks') {
+        # lib\winrt: the WinRT projection the music helper needs on PowerShell 7
+        # (lib\cache is rebuilt on the target machine, so it is not copied).
+        foreach ($dir in 'src','icons','assets','hooks','lib\winrt') {
             $from = Join-Path $src $dir
             if (-not (Test-Path -LiteralPath $from)) { continue }
             $to = Join-Path $dst $dir
@@ -586,7 +588,11 @@ function Invoke-Uninstall {
 $script:Page = 0
 $script:TargetDir = $DefaultDir
 $script:Installed = $null
-$pages = @($ui.pageWelcome, $ui.pageOptions, $ui.pageProgress, $ui.pageDone)
+# Three steps: welcome (language) -> installing -> done. The options page
+# (folder / start with Windows / desktop shortcut) is gone: the app always
+# installs to the default folder, always starts with Windows, and adds no
+# desktop shortcut. Its XAML stays but is never shown.
+$pages = @($ui.pageWelcome, $ui.pageProgress, $ui.pageDone)
 
 function Update-Text {
     $ui.welcomeTitle.Text  = S 'WelcomeTitle'
@@ -618,10 +624,11 @@ function Show-Page([int]$Index) {
     for ($i = 0; $i -lt $pages.Count; $i++) {
         $pages[$i].Visibility = if ($i -eq $Index) { 'Visible' } else { 'Collapsed' }
     }
-    $ui.backButton.Visibility = if ($Index -eq 1) { 'Visible' } else { 'Collapsed' }
-    $ui.nextButton.Content = switch ($Index) { 0 { S 'Next' } 1 { S 'Install' } 3 { S 'Finish' } default { S 'Next' } }
-    $ui.nextButton.IsEnabled = ($Index -ne 2)
-    $ui.closeButton.IsEnabled = ($Index -ne 2)
+    $ui.pageOptions.Visibility = 'Collapsed'
+    $ui.backButton.Visibility = 'Collapsed'
+    $ui.nextButton.Content = switch ($Index) { 0 { S 'Install' } 2 { S 'Finish' } default { S 'Next' } }
+    $ui.nextButton.IsEnabled = ($Index -ne 1)
+    $ui.closeButton.IsEnabled = ($Index -ne 1)
     $ui.dots.Children.Clear()
     for ($i = 0; $i -lt $pages.Count; $i++) {
         $d = New-Object System.Windows.Shapes.Ellipse
@@ -700,18 +707,18 @@ Register-Tap $ui.nextButton {
         return
     }
     switch ($script:Page) {
-        0 { Show-Page 1 }
-        1 {
-            Show-Page 2
+        0 {
+            Show-Page 1
             try {
-                $script:Installed = Invoke-Install $script:TargetDir ([bool]$ui.autostartBox.IsChecked) ([bool]$ui.desktopBox.IsChecked)
-                Show-Page 3
+                # Start with Windows: always. Desktop shortcut: never.
+                $script:Installed = Invoke-Install $script:TargetDir $true $false
+                Show-Page 2
             } catch {
                 [void][System.Windows.MessageBox]::Show($_.Exception.Message, (S 'FailTitle'), 'OK', 'Error')
-                Show-Page 1
+                Show-Page 0
             }
         }
-        3 {
+        2 {
             if ($ui.launchBox.IsChecked -and $script:Installed) {
                 Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\wscript.exe') -ArgumentList ('"' + (Join-Path $script:Installed 'Start-Unified.vbs') + '"')
             }

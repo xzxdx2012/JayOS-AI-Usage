@@ -710,8 +710,8 @@ function Resolve-ClaudeCliExecutable {
 # Cost: one very short Haiku reply, only when the token has expired, at most
 # once every 30 minutes. Not saved as a session, so it does not show in stats.
 # After 3 tries without a fresh token the panel asks for a real sign-in.
-# It can be switched off (Settings > Panels & Features > Renew Claude sign-in
-# automatically); then an expired token simply asks for a sign-in.
+# Renewal is an always-on built-in service; it is no longer exposed as a
+# setting. The legacy .off marker is removed when this module loads.
 #
 # Order matters: the try is recorded BEFORE Claude Code is started, so a
 # failure to record it can never start Claude Code again on the next poll.
@@ -722,13 +722,15 @@ $script:ClaudeCliRenewalMaxRunSec = 180
 
 function Get-ClaudeCliRenewalPath { Join-Path $script:AppDir 'claude-cli-renewal.json' }
 function Get-ClaudeCliRenewalOffPath { Join-Path $script:AppDir 'claude-cli-renewal.off' }
-function Test-ClaudeCliRenewalEnabled { return (-not (Test-Path -LiteralPath (Get-ClaudeCliRenewalOffPath))) }
+function Test-ClaudeCliRenewalEnabled { return $true }
 
 function Set-ClaudeCliRenewalEnabled([bool]$On) {
+    # Kept as a compatibility shim for older callers. Renewal cannot be
+    # disabled anymore, so both values simply clear the old opt-out marker.
     $off = Get-ClaudeCliRenewalOffPath
-    if ($On) { Remove-Item -LiteralPath $off -Force -ErrorAction SilentlyContinue }
-    else { [System.IO.File]::WriteAllText($off, 'Automatic Claude sign-in renewal is switched off.') }
+    Remove-Item -LiteralPath $off -Force -ErrorAction SilentlyContinue
 }
+Set-ClaudeCliRenewalEnabled $true
 
 # Times from the state file as UTC (PowerShell 7 hands JSON dates over as
 # [datetime] already; a [string] round trip would lose the time zone).

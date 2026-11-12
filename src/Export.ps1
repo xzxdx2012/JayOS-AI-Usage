@@ -215,17 +215,17 @@ function Get-GrokExportLines {
     $resetAt = Get-ExportNote $Usage 'WeekResetsAt'
     $plan = Get-ExportNote $Usage 'PlanType'
     $prepaid = Get-ExportNote $Usage 'PrepaidBalance'
-    $lines.Add((Format-ExportUsedPct 'Grok weekly' $weekPct))
+    $lines.Add((Format-ExportUsedPct 'Grok Bot weekly' $weekPct))
     if ($resetAt) {
         $reset = if (Get-Command Format-Reset -ErrorAction SilentlyContinue) { Format-Reset $resetAt } else { [string]$resetAt }
-        if ($reset) { $lines.Add("Grok weekly reset: $reset") }
+        if ($reset) { $lines.Add("Grok Bot weekly reset: $reset") }
     }
-    if ($plan) { $lines.Add("Grok plan: $plan") }
+    if ($plan) { $lines.Add("Grok Bot plan: $plan") }
     $resets = Get-ExportNote $Usage 'ResetsAvailable'
     if ((Get-ExportNote $Usage 'ResetStatus') -eq 'ok' -and $null -ne $resets) {
-        $lines.Add("Grok one-time resets: $resets available")
-    } else { $lines.Add('Grok one-time resets: --') }
-    if ($null -ne $prepaid -and [string]$prepaid -ne '') { $lines.Add("Grok prepaid: $prepaid") }
+        $lines.Add("Grok Bot one-time resets: $resets available")
+    } else { $lines.Add('Grok Bot one-time resets: --') }
+    if ($null -ne $prepaid -and [string]$prepaid -ne '') { $lines.Add("Grok Bot prepaid: $prepaid") }
     return @($lines)
 }
 

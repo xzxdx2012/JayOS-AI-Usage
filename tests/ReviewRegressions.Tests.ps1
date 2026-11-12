@@ -233,13 +233,13 @@ try {
     Assert ($a -eq 'launch_failed' -and $b -eq 'waiting' -and $script:launches -eq 1) 'R5 failed start reported and backed off'
     Assert ((Get-ClaudeCliRenewalState).Tries -eq 1) 'R5 failed start counts as a try'
 
-    # Switched off in Settings.
+    # Renewal is built in. The old setter remains only as a compatibility shim
+    # and must not recreate the retired opt-out marker.
     Clear-ClaudeCliRenewal
     Set-ClaudeCliRenewalEnabled $false
     $script:launches = 0
-    Assert ((Invoke-ClaudeCliRenewal) -eq 'disabled' -and $script:launches -eq 0) 'R5 switched off: nothing started'
-    Set-ClaudeCliRenewalEnabled $true
-    Assert (Test-ClaudeCliRenewalEnabled) 'R5 switched back on'
+    Assert ((Test-ClaudeCliRenewalEnabled) -and -not (Test-Path -LiteralPath (Get-ClaudeCliRenewalOffPath))) 'R5 renewal stays built in when an old caller passes false'
+    Assert ((Invoke-ClaudeCliRenewal) -eq 'launch_failed' -and $script:launches -eq 1) 'R5 built-in renewal still runs'
 
     Write-Output "$script:count tests passed on PowerShell $($PSVersionTable.PSVersion)."
 } finally {

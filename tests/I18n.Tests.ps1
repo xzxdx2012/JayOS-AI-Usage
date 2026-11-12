@@ -41,7 +41,8 @@ $culture = [cultureinfo]::CurrentCulture
 try {
     [cultureinfo]::CurrentCulture = 'fr-FR'; $texts += ('of {0:N0}' -f 2000)
     foreach ($lang in 'zh','ja','fr','ko') {
-        foreach ($t in @($texts | Select-Object -Unique)) { Assert ((Convert-I18nString $t $lang) -cne $t) "$lang translation: $t" }
+        # Product names are shown as-is in every language.
+        foreach ($t in @($texts | Select-Object -Unique | Where-Object { $_ -notin @('DeepSeek Harness') })) { Assert ((Convert-I18nString $t $lang) -cne $t) "$lang translation: $t" }
         Assert ((Convert-I18nString '5-hour session at 95% (~15 min to limit)' $lang) -notmatch 'min to limit|5-hour session| at ') 'entire alert body translated'
         Assert ((Convert-I18nString 'One-time usage resets. Redeem on the Grok Usage page. Earliest expires 2026-10-21 10:00.' $lang) -notmatch 'Earliest expires|Redeem on') 'entire expiry tooltip translated'
         $el = [pscustomobject]@{ ToolTip = 'Drag to move' }

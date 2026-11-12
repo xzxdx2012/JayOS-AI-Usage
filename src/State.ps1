@@ -21,7 +21,7 @@ function Load-State {
 function Apply-Settings {
     $script:window.Opacity = [double]$script:Cfg.Opacity
     $vis = if ($script:Cfg.ShowStats) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
-    $sp = $script:window.FindName('statsPanel'); if ($sp) { $sp.Visibility = $vis }
+    foreach ($n in @('statsPanel', 'codexStatsPanel', 'cursorStatsPanel', 'deepseekStatsPanel')) { $sp = $script:window.FindName($n); if ($sp) { $sp.Visibility = $vis } }
     # Show/hide the sparkline row based on ShowGraph setting
     $sparkVis = if ($script:Cfg.ShowGraph) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
     $sparkRow = $script:window.FindName('sparkRow'); if ($sparkRow) { $sparkRow.Visibility = $sparkVis }

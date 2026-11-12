@@ -2,12 +2,12 @@
 # Calm WinForms checklist. Persists via Cfg.Sections + Save-UnifiedState.
 
 function Get-DefaultUnifiedSections {
-    # Demo / stranger path: Claude off until chosen. Codex/Cursor/Grok on.
+    # Demo / stranger path: Claude off until chosen.
     @{
+        deepseek = $true
         claude = $false
         codex  = $true
         cursor = $true
-        grok   = $true
     }
 }
 
@@ -84,9 +84,9 @@ function Show-ProviderPickerDialog {
     $checks = @{}
     $y = 92
     foreach ($pair in @(
-        @('codex', 'Codex'),
+        @('deepseek', 'DeepSeek Harness'),
+        @('codex', 'CodeX'),
         @('cursor', 'Cursor'),
-        @('grok', 'Grok'),
         @('claude', 'Claude')
     )) {
         $key = $pair[0]
@@ -122,8 +122,7 @@ function Show-ProviderPickerDialog {
     if ($result -ne [System.Windows.Forms.DialogResult]::OK) { return $null }
 
     $out = @{}
-    foreach ($key in @('claude', 'codex', 'cursor', 'grok')) {
-        # Retain hidden experimental-provider preferences across mode switches.
+    foreach ($key in @('deepseek', 'claude', 'codex', 'cursor')) {
         $out[$key] = if ($checks.ContainsKey($key)) { [bool]$checks[$key].Checked } else { [bool]$map[$key] }
     }
     # Keep at least one tile so the HUD isn't an empty shell.

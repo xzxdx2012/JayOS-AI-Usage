@@ -43,6 +43,7 @@ foreach ($pair in @(
     @('Claude has a question',     'Claude 有个问题',    'Claude からの質問',    'Claude a une question',    'Claude의 질문'),
     @('Claude is asking',          'Claude 在问你',      'Claude が聞いています', 'Claude vous demande',     'Claude가 묻고 있어요'),
     @('Codex is asking',           'Codex 在问你',       'Codex が聞いています', 'Codex vous demande',      'Codex가 묻고 있어요'),
+    @('DeepSeek is asking',        'DeepSeek 在问你',    'DeepSeek が聞いています', 'DeepSeek vous demande',   'DeepSeek가 묻고 있어요'),
     @('Edit files',                '修改文件',           'ファイルを編集',       'Modifier des fichiers',    '파일 수정'),
     @('Write a file',              '写入文件',           'ファイルに書き込む',   'Écrire un fichier',        '파일 쓰기'),
     @('every occurrence',          '全部替换',           'すべて置換',           'toutes les occurrences',   '모두 바꾸기'),
@@ -348,13 +349,15 @@ function Start-RequestWatcher {
         ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
     if (-not $script:ReqTimer) {
         $t = New-Object System.Windows.Threading.DispatcherTimer
-        $t.Interval = [TimeSpan]::FromMilliseconds(300)
+        # Local approval/notification files are tiny; keep their cards near-instant.
+        $t.Interval = [TimeSpan]::FromMilliseconds(75)
         $t.add_Tick({ try { Invoke-RequestPoll } catch { try { Write-Log "AI requests: poll error - $($_.Exception.Message)" } catch { } } })
         $script:ReqTimer = $t
     }
     $script:ReqAliveAt = [DateTime]::MinValue
     Update-ReqHeartbeat
     $script:ReqTimer.Start()
+    try { Invoke-RequestPoll } catch { }
     try { Initialize-ReqWindowNative } catch { try { Write-Log "AI requests: window helper unavailable - $($_.Exception.Message)" } catch { } }
 }
 
@@ -1164,9 +1167,10 @@ function New-ReqCardShell($Req, [string]$Id) {
     # Header: agent icon, "Claude Code · folder" / "Codex · folder", and "+2"
     # when more wait.
     $isCodex = ([string]$Req.agent -eq 'codex')
+    $isDeepSeek = ([string]$Req.agent -eq 'deepseek')
     $isCowork = ([string]$Req.agent -eq 'cowork')
-    $agentName = if ($isCodex) { 'Codex' } elseif ($isCowork) { 'Claude Cowork' } else { 'Claude Code' }
-    $agentIcon = if ($isCodex) { 'codex.png' } else { 'claude.png' }
+    $agentName = if ($isDeepSeek) { 'DeepSeek' } elseif ($isCodex) { 'Codex' } elseif ($isCowork) { 'Claude Cowork' } else { 'Claude Code' }
+    $agentIcon = if ($isDeepSeek) { 'deepseek.png' } elseif ($isCodex) { 'codex.png' } else { 'claude.png' }
     $head = New-Object System.Windows.Controls.DockPanel
     $head.Margin = '0,0,0,8'
     $badge = New-ReqText '' 11 '#8E8E93' 'SemiBold'
@@ -1433,6 +1437,7 @@ $script:ReqAgentApps = @{
     claude = @('Claude')
     cowork = @('Claude')
     codex  = @('Codex', 'ChatGPT')
+    deepseek = @('DeepSeek Harness')
 }
 function Find-ReqAgentWindow($Chain, [string]$Agent = '') {
     try { Initialize-ReqWindowNative } catch { return [IntPtr]::Zero }
@@ -1444,7 +1449,7 @@ function Find-ReqAgentWindow($Chain, [string]$Agent = '') {
         } catch { }
     }
     $names = @($script:ReqAgentApps[$Agent.ToLowerInvariant()])
-    $pathHint = if ($Agent -eq 'codex') { '*OpenAI.Codex*' } elseif ($Agent -eq 'claude' -or $Agent -eq 'cowork') { '*AnthropicClaude*' } else { $null }
+    $pathHint = if ($Agent -eq 'codex') { '*OpenAI.Codex*' } elseif ($Agent -eq 'deepseek') { '*DeepSeek Harness*' } elseif ($Agent -eq 'claude' -or $Agent -eq 'cowork') { '*AnthropicClaude*' } else { $null }
     foreach ($p in @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero })) {
         $match = $names -contains $p.ProcessName
         if (-not $match -and $pathHint) { try { $match = ([string]$p.Path -like $pathHint) } catch { } }
@@ -1456,6 +1461,7 @@ function Find-ReqAgentWindow($Chain, [string]$Agent = '') {
 # No window to bring forward (the app is closed or sits in the tray): open
 # the agent's app from the Start menu instead.
 function Start-ReqAgentApp([string]$Agent) {
+    if ($Agent -eq 'deepseek') { try { Open-ProviderApp 'deepseek'; return $true } catch { return $false } }
     $want = switch ($Agent) { 'codex' { '^(Codex|ChatGPT Codex)$' } { $_ -eq 'claude' -or $_ -eq 'cowork' } { '^Claude$' } default { $null } }
     if (-not $want) { return $false }
     try {
@@ -1522,7 +1528,7 @@ function Show-NoticeCard($Note) {
     $card = New-ReqCardShell $Note $id
     $card.IsNotice = $true
     $stack = $card.Content
-    $who = if ($card.IsCodex) { 'Codex' } else { 'Claude' }
+    $who = if ([string]$Note.agent -eq 'deepseek') { 'DeepSeek' } elseif ($card.IsCodex) { 'Codex' } else { 'Claude' }
     $kind = [string]$Note.kind
     $spec = switch ($kind) {
         'done'       { @{ Title = '{0} finished';                Color = '#30D158'; Mark = '✓'; Hint = '';                         Secs = 8 } }

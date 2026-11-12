@@ -2,18 +2,18 @@
 
 A Windows notch-style overlay for AI usage and permission requests. It lives at the top of the screen, shows account limits, and lets you respond to supported terminal requests without switching windows.
 
-**Version: 0.0.3 Beta** · Maintained by **xzxdx2012**.
+**Version: 0.0.4 Beta** · Maintained by **xzxdx2012**.
 
 ## Install
 
-1. Download **JayOS-AI-Usage-Setup-0.0.3-beta.exe** from [Releases](../../releases).
-2. Run the installer and choose a language and installation folder.
-3. **Start when Windows starts** is on by default. **Create a desktop shortcut** is off by default; enable it if wanted.
+1. Download **JayOS-AI-Usage-Setup-0.0.4-beta.exe** from [Releases](../../releases).
+2. Run the installer, choose a language and installation folder, and select **Install**.
+3. The app starts with Windows; no desktop shortcut is created. (The wizard no longer has an options page.)
 
-The installer runs per user and does not require administrator privileges. It prefers PowerShell 7, offers a portable runtime if needed, and falls back to Windows PowerShell 5.1 when unavailable.
+The installer runs per user and does not require administrator privileges. It prefers PowerShell 7, offers a portable runtime if needed, and falls back to Windows PowerShell 5.1 when unavailable. The Music page needs PowerShell 7.
 
-- **Silent install:** `JayOS-AI-Usage-Setup-0.0.3-beta.exe /S`. A fresh install enables autostart without creating a desktop shortcut. An update preserves your existing shortcut choices.
-- **Portable ZIP:** extract `JayOS-AI-Usage-0.0.3-beta.zip`, then run `Start-Unified.vbs`. Use `Setup.vbs` if you want to install it.
+- **Silent install:** `JayOS-AI-Usage-Setup-0.0.4-beta.exe /S`. A fresh install enables autostart without creating a desktop shortcut. An update preserves your existing shortcut choices.
+- **Portable ZIP:** extract `JayOS-AI-Usage-0.0.4-beta.zip`, then run `Start-Unified.vbs`. Use `Setup.vbs` if you want to install it.
 - **Uninstall:** Windows **Settings → Apps → Installed apps → JayOS AI Usage → Uninstall**.
 - **Checksums:** compare the downloaded files with `SHA256SUMS.txt`.
 
@@ -23,12 +23,33 @@ The installer is not code-signed. Release archives never contain local credentia
 
 - Hover at the top center of the screen to show usage. Click to open the full panel.
 - Move away to fold it. Pin the notch to keep it open, or drag the expanded panel to another position.
-- Use the mouse wheel or provider headers to change the expanded card.
+- Use the mouse wheel or provider headers to change the expanded card. The panel reopens on the card you picked last, also after a restart.
+- With only one AI provider switched on, its card fills the full width and the mouse wheel turns pages instead.
+- **‹ ›**, the page dots or a sideways touchpad swipe switch between the **AI**, **Music** and **Shelf** pages.
 - **Accounts** shows sign-in status and opens the appropriate sign-in or provider page.
 - **Refresh** updates usage. The update button checks for published releases.
-- The settings menu can be moved by dragging its title.
+- The gear at the bottom right opens **Settings**: quick tiles on top, grouped options below, a page per group. Drag it by its background; it reopens under the gear. The tray icon keeps the classic menu.
 
 The native window height contracts to the visible notch when idle, rather than leaving a full-height transparent panel underneath. Horizontal stage coordinates remain unchanged so dragging and permission-card positioning stay compatible.
+
+## Music and Shelf pages
+
+- **Music** shows what is playing - NetEase Cloud Music, Apple Music, Spotify, browsers and any app that publishes a Windows media session - with cover, progress, synced lyrics and play/pause/next/previous. Track changes and pauses appear within about a tenth of a second.
+- NetEase Cloud Music is also recognised when it publishes no media session: from its window title, its local play queue and its audio level (for pause).
+- Lyrics come from NetEase's lyric service for NetEase tracks, otherwise from [LRCLIB](https://lrclib.net). Only the title, artist, album and length are sent. Turn lookups off under **Settings → Island → Synced lyrics**.
+- The notch can show the current track and lyric line (**Now playing on the notch**, **Lyrics on the notch**). On the other pages the footer shows the track; click it to open Music.
+- **Shelf** keeps files dropped on the island and recent clipboard text (clipboard history can be turned off; it is kept in memory only).
+
+The music helper reads Windows media sessions through the Microsoft WinRT projection in `lib/winrt` (`Microsoft.Windows.SDK.NET.dll`, `WinRT.Runtime.dll`, Microsoft-signed).
+
+## DeepSeek balance
+
+The DeepSeek card leads with the **remaining balance**, read from DeepSeek's official API - never estimated:
+
+1. **Your API key** (recommended): create one at [platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys) and run `setx DEEPSEEK_API_KEY "sk-..."`. The key is read from the environment (or the first line of `deepseek-api-key.txt` in the app folder) and sent only to `api.deepseek.com`.
+2. **DeepSeek Harness**, while it runs: the balance is read from its local server on `127.0.0.1`; Harness asks DeepSeek with its own key. If Harness has an access password, put it on the first line of `deepseek-harness-token.txt` in the app folder.
+
+The last real balance is remembered with the time it was read, so the card still shows it - marked as a **last read** value - when no source answers. Local token, request and session counts come from DeepSeek Harness's own session files.
 
 ## Stable and experimental providers
 
@@ -78,6 +99,7 @@ The reset restores appearance, language, view mode, hotkeys, provider preference
 | `Setup.ps1`, `Setup.vbs` | Installer and uninstaller |
 | `Start-Unified.vbs` | Console-free launcher |
 | `installer/` | Go single-file installer source and build scripts |
+| `lib/winrt/` | Microsoft WinRT projection used by the music helper |
 | `tests/` | Fixture-based regression tests |
 | `sqlite3.exe` | Local database reader used by the experimental Cursor integration |
 
@@ -94,7 +116,7 @@ go install github.com/akavel/rsrc@v0.10.2
 
 The build packages an explicit application-file allowlist, tests payload extraction and content, and writes EXE, ZIP, and SHA-256 checksum files.
 
-Run each `tests/*.Tests.ps1` with both PowerShell 7 and Windows PowerShell 5.1. Native WPF bounds coverage can be run separately with:
+Run each `tests/*.Tests.ps1` with PowerShell 7 (and Windows PowerShell 5.1 for the 5.1-compatible parts). Native WPF bounds coverage can be run separately with:
 
 ```powershell
 pwsh -STA -NoProfile -File tests/NotchWindowBounds.Wpf.ps1

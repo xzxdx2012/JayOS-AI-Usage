@@ -1,4 +1,4 @@
-﻿<#
+<#
     Unified AI Usage Overlay
     A single always-on-top HUD showing Claude Code, Codex, Cursor, and Grok usage.
     Right-click the panel for all options.
@@ -65,7 +65,7 @@ function Start-HiddenBackground {
 
     if ([System.IO.Path]::GetFileName($exe) -ieq 'pwsh.exe') {
         # conhost --headless is required: pwsh -WindowStyle Hidden is ignored by Windows Terminal.
-        Start-Process 'conhost.exe' -ArgumentList (@('--headless', (Quote-NativeArg $exe)) + $args)
+        Start-Process 'conhost.exe' -WindowStyle Hidden -ArgumentList (@('--headless', (Quote-NativeArg $exe)) + $args)
     } else {
         Start-Process $exe -WindowStyle Hidden -ArgumentList $args
     }
@@ -393,6 +393,11 @@ Remove-StaleOverlayArtifacts
 . (Join-Path $script:AppDir 'src\Update.ps1')
 . (Join-Path $script:AppDir 'src\UnifiedTray.ps1')
 . (Join-Path $script:AppDir 'src\Requests.ps1')
+. (Join-Path $script:AppDir 'src\DeepSeekData.ps1')
+. (Join-Path $script:AppDir 'src\MediaShelf.ps1')
+. (Join-Path $script:AppDir 'src\IslandPages.ps1')
+. (Join-Path $script:AppDir 'src\AppleSettings.ps1')
+. (Join-Path $script:AppDir 'src\DebugSnapshot.ps1')
 
 # ---------------------------------------------------------------------------
 # Runtime state (declared after modules so $xaml from Shell.ps1 is available)
@@ -405,6 +410,7 @@ $script:Positioned = $false
 $script:window = [System.Windows.Markup.XamlReader]::Parse($xaml)
 
 function Update-OverlayViews {
+    Update-DeepSeekPanel
     Update-AllSections
     if (Get-Command Update-IslandView -ErrorAction SilentlyContinue) { Update-IslandView }
 }
@@ -630,6 +636,7 @@ function Start-AllRefreshJobs {
 
     $includeCursor = (Get-Command Test-DeveloperFeaturesEnabled -ErrorAction SilentlyContinue) -and (Test-DeveloperFeaturesEnabled)
     $jobs = @(
+        @{ Kind = 'DeepSeekUsage'; Script = $script:DeepSeekUsageScript; Arguments = @($script:AppDir, $script:DeepSeekPython, $(if (Get-Command Get-DeepSeekApiKey -ErrorAction SilentlyContinue) { Get-DeepSeekApiKey } else { '' })) }
         @{
             Kind       = 'ClaudeUsage'
             Script     = $script:ClaudeUsageScript
@@ -755,6 +762,7 @@ function Complete-RefreshJobs {
                 $resultKind = [string]$r['Kind']
                 $applied = $true
                 switch ($resultKind) {
+                    'DeepSeekUsage' { $script:DeepSeekStats = $r['DeepSeekStats'] }
                     'ClaudeUsage' {
                         $script:State           = Resolve-ClaudeUsageState $script:State $r['State']
                         if ($r['ClaudeIdentity']) { $script:ClaudeIdentity = $r['ClaudeIdentity'] }
@@ -875,11 +883,81 @@ $script:credentialTimer.add_Tick({
     Start-AllRefreshJobs -Force -Kind @('ClaudeUsage')
 })
 
+# DeepSeek Harness has no native hook registration. Watch its local session
+# files and refresh just that source when a transcript changes, instead of
+# waiting for the normal three-minute usage poll.
+# Cheap check (one file stat) of the transcript that was newest last time;
+# the full recursive scan (~25 ms on the UI thread - enough to drop a frame
+# mid-animation) runs only every 30 s or when that file is gone.
+$script:DeepSeekLatestFile = $null
+$script:DeepSeekFullScanAt = [datetime]::MinValue
+function Get-DeepSeekSessionStamp {
+    $dir = Join-Path $env:USERPROFILE '.dsh\sessions'
+    try {
+        $now = Get-Date
+        if ($script:DeepSeekLatestFile -and ($now - $script:DeepSeekFullScanAt).TotalSeconds -lt 30) {
+            $f = Get-Item -LiteralPath $script:DeepSeekLatestFile -ErrorAction SilentlyContinue
+            if ($f) { return ('{0}:{1}:{2}' -f $f.FullName, $f.LastWriteTimeUtc.Ticks, $f.Length) }
+        }
+        $script:DeepSeekFullScanAt = $now
+        if (-not (Test-Path -LiteralPath $dir)) { $script:DeepSeekLatestFile = $null; return '' }
+        $latest = Get-ChildItem -LiteralPath $dir -Recurse -File -ErrorAction Stop |
+            Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+        if (-not $latest) { $script:DeepSeekLatestFile = $null; return '' }
+        $script:DeepSeekLatestFile = $latest.FullName
+        return ('{0}:{1}:{2}' -f $latest.FullName, $latest.LastWriteTimeUtc.Ticks, $latest.Length)
+    } catch { return '' }
+}
+
+# True while the island is mid-animation (notch morph, page slide or card
+# switch). Periodic UI-thread chores wait it out so frames are not dropped.
+function Test-IslandAnimating {
+    return ([bool]$script:NotchRendering -or [bool]$script:CardRailAnimating -or [bool]$script:IslandPageSliding)
+}
+
+$script:DeepSeekSessionStamp = Get-DeepSeekSessionStamp
+# An active DeepSeek session rewrites its transcript every second. Mark the
+# source dirty and refresh at most every few seconds, only when the previous
+# read has finished, so changes are never dropped and the log is not flooded.
+$script:DeepSeekDirty = $false
+$script:DeepSeekLastStart = [datetime]::MinValue
+$script:deepSeekNoticeTimer = New-Object System.Windows.Threading.DispatcherTimer
+$script:deepSeekNoticeTimer.Interval = [TimeSpan]::FromSeconds(2)
+$script:deepSeekNoticeTimer.add_Tick({
+    if (Test-IslandAnimating) { return }
+    $stamp = Get-DeepSeekSessionStamp
+    if ($stamp -and $stamp -ne $script:DeepSeekSessionStamp) {
+        $script:DeepSeekSessionStamp = $stamp
+        $script:DeepSeekDirty = $true
+    }
+    if (-not $script:DeepSeekDirty) { return }
+    if ($script:pollJobs.ContainsKey('DeepSeekUsage') -and
+        $script:pollJobs['DeepSeekUsage'].State -in @('Running', 'NotStarted')) { return }
+    if (((Get-Date) - $script:DeepSeekLastStart).TotalSeconds -lt 5) { return }
+    $script:DeepSeekDirty = $false
+    $script:DeepSeekLastStart = Get-Date
+    Start-AllRefreshJobs -Force -Kind @('DeepSeekUsage')
+})
+
 # Tick timer: refreshes reset countdowns/clock every 30s (render only, no I/O,
 # no layout Measure - Resize-ToContent is intentionally NOT in this path).
 $script:tickTimer = New-Object System.Windows.Threading.DispatcherTimer
 $script:tickTimer.Interval = [TimeSpan]::FromSeconds(30)
-$script:tickTimer.add_Tick({ Update-OverlayViews })
+$script:tickTimer.add_Tick({
+    # A full view refresh is a lot of UI-thread work; skip a tick that lands
+    # mid-animation (the next one is 30 s away at most... retry shortly).
+    if (Test-IslandAnimating) {
+        if (-not $script:TickRetryQueued) {
+            $script:TickRetryQueued = $true
+            $retry = New-Object System.Windows.Threading.DispatcherTimer
+            $retry.Interval = [TimeSpan]::FromMilliseconds(700)
+            $retry.Add_Tick({ param($s, $e) $s.Stop(); $script:TickRetryQueued = $false; if (-not (Test-IslandAnimating)) { Update-OverlayViews } })
+            $retry.Start()
+        }
+        return
+    }
+    Update-OverlayViews
+})
 
 
 function Show-UnifiedWindowWhenRendered {
@@ -951,6 +1029,7 @@ $script:pollTimer.Start()
 $script:jobTimer.Start()
 $script:tickTimer.Start()
 $script:credentialTimer.Start()
+$script:deepSeekNoticeTimer.Start()
 try { Initialize-AiRequests } catch { Write-Log "AI requests: start failed - $($_.Exception.Message)" }
 
 # Let WPF paint the notch before starting process jobs and network work.

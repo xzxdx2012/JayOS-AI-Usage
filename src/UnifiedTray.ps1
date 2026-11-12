@@ -33,8 +33,8 @@
 $script:NotchSpec = @{
     EdgeW = 132.0; EdgeH = 5.0; EdgeRb = 2.5; EdgeSh = 2.5
     NotchH = 32.0; NotchRb = 12.0; NotchSh = 7.0; NotchPadX = 12.0; NotchMinW = 150.0
-    PanelMinW = 520.0; PanelGutter = 14.0; PanelRb = 22.0; PanelSh = 10.0; FloatRadius = 22.0
-    StagePadX = 20.0; StagePadBottom = 12.0
+    PanelMinW = 680.0; PanelGutter = 14.0; PanelRb = 22.0; PanelSh = 10.0; FloatRadius = 22.0
+    StagePadX = 30.0; StagePadBottom = 12.0
     EdgeZoneExtraX = 56.0; EdgeZoneY = 9.0
     HoverDwellMs = 60.0; HoverLeaveMs = 220.0; PanelLeaveMs = 100.0; PollMs = 35
 }
@@ -73,6 +73,12 @@ $script:NotchWideElements = $null
 $script:NotchHwnd = [IntPtr]::Zero
 $script:NotchHwndWindow = $null
 $script:NotchInv = [System.Globalization.CultureInfo]::InvariantCulture
+# Squash-and-stretch, after Nusa: a second, bouncy spring (k=500, c=18 =>
+# zeta 0.40) kicked on each morph. s widens the silhouette by 3.5%*s and
+# flattens it by 6%*s, so the notch "lands" like jelly. s is the spring's
+# impulse response, normalised to peak at Amp.
+$script:NotchSquash = $null
+$script:NotchSquashS = 0.0
 $script:NotchSpringK = 7.5
 $script:NotchSpringNorm = 1.0 - (1.0 + 7.5) * [math]::Exp(-7.5)
 $script:VisVisible = [System.Windows.Visibility]::Visible
@@ -121,18 +127,20 @@ function Get-IslandMember {
 # icon found the tile falls back to a coloured monogram.
 # ---------------------------------------------------------------------------
 $script:ProviderMeta = [ordered]@{
+    # Use the exact desktop shortcut title and extract its real icon at runtime.
+    deepseek = @{ Name = 'DeepSeek Harness'; Mono = 'DS'; Grad = @('#4D6BFE', '#3153CF'); Packages = '^DeepSeek[._]'; Shortcuts = @('%USERPROFILE%\OneDrive\Desktop\DeepSeek Harness.lnk', '%USERPROFILE%\Desktop\DeepSeek Harness.lnk'); Exes = @('%LOCALAPPDATA%\Programs\DeepSeek Harness\DeepSeek Harness.exe') }
     claude = @{ Name = 'Claude'; Mono = 'Cl'; Grad = @('#F59E0B', '#EA580C')
                 Packages = '^(Claude|AnthropicPBC|Anthropic)[._]'
                 Exes = @('%LOCALAPPDATA%\AnthropicClaude\claude.exe', '%LOCALAPPDATA%\Programs\Claude\Claude.exe', '%ProgramFiles%\Claude\Claude.exe', '%LOCALAPPDATA%\Claude\Claude.exe') }
-    codex  = @{ Name = 'Codex'; Mono = 'Cx'; Grad = @('#6366F1', '#8B5CF6')
+    codex  = @{ Name = 'CodeX'; Mono = 'CX'; Grad = @('#6366F1', '#8B5CF6')
                 Packages = '^OpenAI\.Codex[._]'
                 Exes = @('%LOCALAPPDATA%\Programs\Codex\Codex.exe', '%ProgramFiles%\Codex\Codex.exe') }
     cursor = @{ Name = 'Cursor'; Mono = 'Cu'; Grad = @('#334155', '#0F172A')
                 Packages = '^(Anysphere|Cursor)[._]'
                 Exes = @('%LOCALAPPDATA%\Programs\cursor\Cursor.exe', '%ProgramFiles%\Cursor\Cursor.exe') }
-    grok   = @{ Name = 'Grok'; Mono = 'Gk'; Grad = @('#52525B', '#18181B')
+    grok   = @{ Name = 'Grok Bot'; Mono = 'GB'; Grad = @('#52525B', '#18181B')
                 Packages = '^(XAI|xAI|Grok)[._]'
-                Exes = @('%LOCALAPPDATA%\Programs\Grok\Grok.exe', '%ProgramFiles%\Grok\Grok.exe') }
+                Exes = @('%LOCALAPPDATA%\Programs\Grok Bot\Grok Bot.exe', '%LOCALAPPDATA%\Programs\Grok\Grok.exe', '%ProgramFiles%\Grok\Grok.exe') }
 }
 $script:ProviderIconCache = @{}
 
@@ -220,11 +228,28 @@ function Get-ProviderIcon([string]$Key) {
                 }
             }
         }
-        # 3. classic .exe install
+        # 3. desktop shortcut / classic .exe install.  A shortcut is checked
+        # first so JayOS displays the same real icon the user sees on Desktop.
         if (-not $source -and $meta) {
             Initialize-ProviderIconNative
-            foreach ($raw in $meta.Exes) {
-                $exe = [Environment]::ExpandEnvironmentVariables($raw)
+            $iconFiles = @()
+            foreach ($raw in @($meta.Shortcuts)) {
+                $shortcutPath = [Environment]::ExpandEnvironmentVariables([string]$raw)
+                if (-not (Test-Path -LiteralPath $shortcutPath)) { continue }
+                $ws = $null; $shortcut = $null
+                try {
+                    $ws = New-Object -ComObject WScript.Shell
+                    $shortcut = $ws.CreateShortcut($shortcutPath)
+                    $iconFile = ([string]$shortcut.IconLocation -replace ',\s*-?\d+$', '')
+                    if ($iconFile -and (Test-Path -LiteralPath $iconFile)) { $iconFiles += $iconFile }
+                    elseif ($shortcut.TargetPath -and (Test-Path -LiteralPath $shortcut.TargetPath)) { $iconFiles += [string]$shortcut.TargetPath }
+                } finally {
+                    if ($shortcut) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shortcut) }
+                    if ($ws) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($ws) }
+                }
+            }
+            foreach ($raw in @($meta.Exes)) { $iconFiles += [Environment]::ExpandEnvironmentVariables([string]$raw) }
+            foreach ($exe in @($iconFiles | Select-Object -Unique)) {
                 if (-not (Test-Path -LiteralPath $exe)) { continue }
                 $h = [AIUsageIconNative]::Extract($exe, 64)
                 if ($h -eq [IntPtr]::Zero) { continue }
@@ -333,6 +358,17 @@ $script:I18nText = @{
     'Account & Data' = @{ zh = '账户与数据'; ja = 'アカウントとデータ'; fr = 'Compte et données'; ko = '계정 및 데이터' }
     'Appearance & Layout' = @{ zh = '外观与布局'; ja = '外観とレイアウト'; fr = 'Apparence et disposition'; ko = '모양 및 레이아웃' }
     'Panels & Features' = @{ zh = '面板与功能'; ja = 'パネルと機能'; fr = 'Panneaux et fonctions'; ko = '패널 및 기능' }
+    'Island' = @{ zh = '灵动岛'; ja = 'アイランド'; fr = 'Îlot'; ko = '아일랜드' }
+    'Music page' = @{ zh = '音乐页'; ja = '音楽ページ'; fr = 'Page Musique'; ko = '음악 페이지' }
+    'Shelf page' = @{ zh = 'Shelf 页'; ja = 'Shelf ページ'; fr = 'Page Shelf'; ko = 'Shelf 페이지' }
+    'Now playing on the notch' = @{ zh = '刘海上显示正在播放'; ja = 'ノッチに再生中を表示'; fr = 'Lecture en cours sur l''encoche'; ko = '노치에 재생 중 표시' }
+    'Lyrics on the notch' = @{ zh = '刘海上显示歌词'; ja = 'ノッチに歌詞を表示'; fr = 'Paroles sur l''encoche'; ko = '노치에 가사 표시' }
+    'Synced lyrics' = @{ zh = '同步歌词'; ja = '同期歌詞'; fr = 'Paroles synchronisées'; ko = '동기화 가사' }
+    'Clipboard history' = @{ zh = '剪贴板历史'; ja = 'クリップボード履歴'; fr = 'Historique du presse-papiers'; ko = '클립보드 기록' }
+    'Fast animations' = @{ zh = '快速动画'; ja = '高速アニメーション'; fr = 'Animations rapides'; ko = '빠른 애니메이션' }
+    'Jelly bounce' = @{ zh = '果冻回弹'; ja = 'ゼリーバウンス'; fr = 'Rebond gelée'; ko = '젤리 바운스' }
+    'Soft' = @{ zh = '柔和'; ja = 'ソフト'; fr = 'Doux'; ko = '부드럽게' }
+    'Standard' = @{ zh = '标准'; ja = '標準'; fr = 'Standard'; ko = '표준' }
     'System' = @{ zh = '系统'; ja = 'システム'; fr = 'Système'; ko = '시스템' }
     'Quit' = @{ zh = '退出'; ja = '終了'; fr = 'Quitter'; ko = '종료' }
     'Notch (hover to peek)' = @{ zh = '刘海（悬停预览）'; ja = 'ノッチ（ホバーで表示）'; fr = 'Encoche (survol pour voir)'; ko = '노치 (마우스를 올려 보기)' }
@@ -346,7 +382,18 @@ $script:I18nText = @{
     'Brand' = @{ zh = '品牌标识'; ja = 'ブランド'; fr = 'Marque'; ko = '브랜드' }
     'Providers' = @{ zh = 'AI 服务'; ja = 'プロバイダー'; fr = 'Services IA'; ko = 'AI 서비스' }
     'Log in' = @{ zh = '登录'; ja = 'サインイン'; fr = 'Connexion'; ko = '로그인' }
+    'DeepSeek Harness' = @{ zh = 'DeepSeek Harness'; ja = 'DeepSeek Harness'; fr = 'DeepSeek Harness'; ko = 'DeepSeek Harness' }
+    'DeepSeek Harness is not installed' = @{ zh = 'DeepSeek Harness 未安装'; ja = 'DeepSeek Harness は未インストール'; fr = 'DeepSeek Harness n''est pas installé'; ko = 'DeepSeek Harness가 설치되지 않음' }
+    'Not installed' = @{ zh = '未安装'; ja = '未インストール'; fr = 'Non installé'; ko = '설치 안 됨' }
+    'AI requests in the notch' = @{ zh = '在刘海内回应 AI 请求'; ja = 'ノッチで AI リクエストに応答'; fr = 'Répondre aux requêtes IA dans l''encoche'; ko = '노치에서 AI 요청 응답' }
+    'Notify when a task finishes' = @{ zh = '任务完成时通知'; ja = 'タスク完了時に通知'; fr = 'Notifier à la fin d''une tâche'; ko = '작업 완료 시 알림' }
+    'Notify when the AI needs you' = @{ zh = 'AI 需要你时通知'; ja = 'AI が対応を必要とするとき通知'; fr = 'Notifier quand l''IA a besoin de vous'; ko = 'AI가 당신을 필요로 할 때 알림' }
+    'Remind again if unanswered' = @{ zh = '未回应则再次提醒'; ja = '未応答なら再通知'; fr = 'Rappeler si sans réponse'; ko = '응답이 없으면 다시 알림' }
+    'Open DeepSeek Harness sign-in' = @{ zh = '打开 DeepSeek Harness 登录'; ja = 'DeepSeek Harness のログインを開く'; fr = 'Ouvrir la connexion DeepSeek Harness'; ko = 'DeepSeek Harness 로그인 열기' }
+    'DeepSeek Harness not installed' = @{ zh = 'DeepSeek Harness 未安装'; ja = 'DeepSeek Harness は未インストール'; fr = 'DeepSeek Harness non installé'; ko = 'DeepSeek Harness 설치 안 됨' }
+    'Open Grok Bot sign-in' = @{ zh = '打开 Grok Bot 登录'; ja = 'Grok Bot のログインを開く'; fr = 'Ouvrir la connexion Grok Bot'; ko = 'Grok Bot 로그인 열기' }
     'View' = @{ zh = '视图'; ja = '表示'; fr = 'Affichage'; ko = '보기' }
+    'Follow active monitor' = @{ zh = '跟随当前显示器'; ja = '現在のディスプレイに追従'; fr = "Suivre l’écran actif"; ko = '현재 모니터 따라가기' }
     'Hotkeys' = @{ zh = '快捷键'; ja = 'ホットキー'; fr = 'Raccourcis'; ko = '단축키' }
     'Snap to corner' = @{ zh = '贴靠到角落'; ja = '隅に配置'; fr = 'Aligner dans un coin'; ko = '모서리에 맞추기' }
     'Opacity' = @{ zh = '不透明度'; ja = '不透明度'; fr = 'Opacité'; ko = '불투명도' }
@@ -359,7 +406,7 @@ $script:I18nText = @{
     'Threshold alerts' = @{ zh = '用量提醒'; ja = 'しきい値通知'; fr = 'Alertes de seuil'; ko = '사용량 알림' }
     'Show history graph' = @{ zh = '显示历史曲线'; ja = '履歴グラフを表示'; fr = 'Afficher l''historique'; ko = '기록 그래프 표시' }
     'Show remaining (not used)' = @{ zh = '显示剩余（而非已用）'; ja = '残量を表示（使用量ではなく）'; fr = 'Afficher le restant (pas l''utilisé)'; ko = '남은 양 표시 (사용량 대신)' }
-    'Developer features (Cursor / Grok beta)' = @{ zh = '开发版功能（Cursor / Grok 测试版）'; ja = '開発者向け機能（Cursor / Grok ベータ）'; fr = 'Fonctions de développement (Cursor / Grok bêta)'; ko = '개발 기능 (Cursor / Grok 베타)' }
+    'Developer features (Cursor / Grok Bot beta)' = @{ zh = '开发版功能（Cursor / Grok Bot 测试版）'; ja = '開発者向け機能（Cursor / Grok Bot ベータ）'; fr = 'Fonctions de développement (Cursor / Grok Bot bêta)'; ko = '개발 기능 (Cursor / Grok Bot 베타)' }
     'Restore default settings' = @{ zh = '恢复系统默认设置'; ja = '既定の設定に戻す'; fr = 'Rétablir les paramètres par défaut'; ko = '기본 설정 복원' }
     'Restore app preferences to defaults? Accounts, usage history and Windows startup options will be kept.' = @{ zh = '要恢复应用的默认设置吗？账户、用量历史和 Windows 启动选项将保留。'; ja = 'アプリの設定を既定値に戻しますか？アカウント、使用履歴、Windows の起動設定は保持されます。'; fr = 'Rétablir les préférences par défaut ? Les comptes, l''historique et les options de démarrage de Windows seront conservés.'; ko = '앱 설정을 기본값으로 복원할까요? 계정, 사용 기록 및 Windows 시작 옵션은 유지됩니다.' }
     'Default settings could not be restored. Your previous settings backup has been kept.' = @{ zh = '未能完成默认设置恢复。之前设置的备份已保留。'; ja = '既定の設定を復元できませんでした。以前の設定のバックアップは保持されています。'; fr = 'Impossible de terminer la restauration. La sauvegarde des anciens paramètres est conservée.'; ko = '기본 설정을 복원하지 못했습니다. 이전 설정의 백업은 보관되어 있습니다.' }
@@ -883,11 +930,11 @@ function Invoke-CustomPanelBackground {
     $xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        WindowStyle="None" AllowsTransparency="True" Background="Transparent" ResizeMode="NoResize"
-        SizeToContent="WidthAndHeight" Topmost="True" ShowInTaskbar="False" FontFamily="Segoe UI">
-  <Border Margin="14" Padding="18,14,18,16" CornerRadius="16" Background="#F21C1C1F" BorderBrush="#3A3A3D" BorderThickness="1">
-    <Border.Effect><DropShadowEffect BlurRadius="24" ShadowDepth="4" Opacity="0.55" Color="#000000"/></Border.Effect>
-    <StackPanel Width="276">
+        WindowStyle="None" AllowsTransparency="False" Background="#1C1C1F" ResizeMode="NoResize"
+        SizeToContent="Manual" Width="360" Height="570" Topmost="True" ShowInTaskbar="False" FontFamily="Segoe UI"
+        UseLayoutRounding="True" SnapsToDevicePixels="True" TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType">
+  <Border x:Name="cpRoot" Margin="0" Padding="22,18,22,20" CornerRadius="18" Background="#1C1C1F" BorderBrush="#3A3A3D" BorderThickness="1">
+    <StackPanel Width="300">
       <DockPanel x:Name="cpTitleRow" Background="Transparent" Margin="0,0,0,12">
         <Border x:Name="cpClose" DockPanel.Dock="Right" Width="22" Height="22" CornerRadius="11" Background="#2C2C2E" Cursor="Hand">
           <TextBlock Text="&#x2715;" FontSize="10" Foreground="#A1A1A6" HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -895,10 +942,10 @@ function Invoke-CustomPanelBackground {
         <TextBlock x:Name="cpTitle" FontSize="14" FontWeight="SemiBold" Foreground="#F5F5F7" VerticalAlignment="Center"/>
       </DockPanel>
       <Border CornerRadius="10" ClipToBounds="True" BorderBrush="#33FFFFFF" BorderThickness="1">
-        <Grid x:Name="cpSvHost" Width="274" Height="160" Cursor="Cross" Background="Transparent">
-          <Grid.Clip><RectangleGeometry Rect="0,0,274,160" RadiusX="9" RadiusY="9"/></Grid.Clip>
+        <Grid x:Name="cpSvHost" Width="298" Height="166" Cursor="Cross" Background="Transparent">
+          <Grid.Clip><RectangleGeometry Rect="0,0,298,166" RadiusX="9" RadiusY="9"/></Grid.Clip>
           <Image x:Name="cpSvImage" Stretch="Fill"/>
-          <Canvas x:Name="cpSv" Width="274" Height="160" Background="Transparent">
+          <Canvas x:Name="cpSv" Width="298" Height="166" Background="Transparent">
             <Ellipse x:Name="cpSvThumb" Width="16" Height="16" Stroke="#FFFFFF" StrokeThickness="2.5" IsHitTestVisible="False">
               <Ellipse.Effect><DropShadowEffect BlurRadius="4" ShadowDepth="0" Opacity="0.8"/></Ellipse.Effect>
             </Ellipse>
@@ -913,7 +960,7 @@ function Invoke-CustomPanelBackground {
             <GradientStop Color="#00FFFF" Offset="0.5"/><GradientStop Color="#0000FF" Offset="0.6667"/><GradientStop Color="#FF00FF" Offset="0.8333"/><GradientStop Color="#FF0000" Offset="1"/>
           </LinearGradientBrush></Border.Background>
         </Border>
-        <Canvas x:Name="cpHue" Width="274" Height="16" Background="Transparent">
+        <Canvas x:Name="cpHue" Width="298" Height="16" Background="Transparent">
           <Ellipse x:Name="cpHueThumb" Width="16" Height="16" Stroke="#FFFFFF" StrokeThickness="2.5" IsHitTestVisible="False">
             <Ellipse.Effect><DropShadowEffect BlurRadius="4" ShadowDepth="0" Opacity="0.8"/></Ellipse.Effect>
           </Ellipse>
@@ -925,7 +972,7 @@ function Invoke-CustomPanelBackground {
       </DockPanel>
       <Grid Height="16" Cursor="Hand">
         <Border x:Name="cpBriTrack" CornerRadius="6" Height="12" VerticalAlignment="Center" BorderBrush="#33FFFFFF" BorderThickness="1"/>
-        <Canvas x:Name="cpBri" Width="274" Height="16" Background="Transparent">
+        <Canvas x:Name="cpBri" Width="298" Height="16" Background="Transparent">
           <Ellipse x:Name="cpBriThumb" Width="16" Height="16" Stroke="#FFFFFF" StrokeThickness="2.5" IsHitTestVisible="False">
             <Ellipse.Effect><DropShadowEffect BlurRadius="4" ShadowDepth="0" Opacity="0.8"/></Ellipse.Effect>
           </Ellipse>
@@ -1004,7 +1051,19 @@ function Invoke-CustomPanelBackground {
         $t = [string]$script:ColorPicker.FindName('cpHex').Text
         if ($t -match '^#?[0-9A-Fa-f]{6}$') { Set-CpFromHex $t -FromHex }
     })
-    $w.FindName('cpTitleRow').add_MouseLeftButtonDown({ try { $script:ColorPicker.DragMove() } catch { } })
+    # A borderless picker needs its own generous drag surface.  The whole title
+    # band and empty outer padding can move it; colour controls remain interactive.
+    $w.add_PreviewMouseLeftButtonDown({
+        param($s, $e)
+        if ($e.ChangedButton -ne [System.Windows.Input.MouseButton]::Left) { return }
+        $p = $e.GetPosition($s)
+        $root = $s.FindName('cpRoot')
+        $sourceIsRoot = [object]::ReferenceEquals($e.OriginalSource, $root)
+        if (($p.Y -le 58 -and $p.X -lt 312) -or $sourceIsRoot) {
+            $e.Handled = $true
+            try { $s.DragMove() } catch { }
+        }
+    })
     # Down, not up: the title row would start a drag first.
     $w.FindName('cpClose').add_MouseLeftButtonDown({ param($s, $e) $e.Handled = $true; Close-ColorPicker })
     $w.FindName('cpCancel').add_MouseLeftButtonUp({ Close-ColorPicker })
@@ -1025,17 +1084,43 @@ function Invoke-CustomPanelBackground {
     $w.WindowStartupLocation = 'Manual'
     $area = Get-WorkArea
     $mw = $script:window
-    $w.Measure([System.Windows.Size]::new([double]::PositiveInfinity, [double]::PositiveInfinity))
-    $pos = Get-CpPickerPosition $area @{ Left = $mw.Left; Top = $mw.Top; Width = $mw.ActualWidth } $w.DesiredSize
+    # A not-yet-shown Window can report a 0x0 DesiredSize on some WPF/WinForms
+    # interop paths. Use the designed JayOS card size so the layered window is
+    # never created as an invisible 2x2 surface.
+    $pickerSize = [System.Windows.Size]::new(360.0, 570.0)
+    $pos = Get-CpPickerPosition $area @{ Left = $mw.Left; Top = $mw.Top; Width = $mw.ActualWidth } $pickerSize
     $w.SizeToContent = 'Manual'
     $w.Left = $pos.Left; $w.Top = $pos.Top
     # On a small/high-DPI monitor keep the dialog inside the work area too.
     $w.Width = $pos.Width; $w.Height = $pos.Height
 
     Set-CpFromHex (Get-PanelBgHex)
-    $w.Show()
-    [void]$w.Activate()
-    [void]$w.FindName('cpHex').Focus()
+    # Keep the JayOS-styled picker modal to the overlay. Opening it directly
+    # from the WinForms settings menu used to let the menu's close cycle hide
+    # a modeless WPF picker behind the collapsing panel.
+    try { $w.Owner = $script:window } catch { }
+    $w.add_SourceInitialized({
+        # Keep the native backing opaque and dark, while suppressing Windows'
+        # light border/shadow. A hard window region exposed the white window
+        # behind it as four bright crescents at the rounded corners.
+        try {
+            $helper = New-Object System.Windows.Interop.WindowInteropHelper($script:ColorPicker)
+            [AIUsageDwm]::RoundClean($helper.Handle)
+        } catch { }
+    })
+    $w.add_SizeChanged({
+        try {
+            $helper = New-Object System.Windows.Interop.WindowInteropHelper($script:ColorPicker)
+            [AIUsageDwm]::RoundClean($helper.Handle)
+        } catch { }
+    })
+    $w.add_ContentRendered({ [void]$script:ColorPicker.Activate(); [void]$script:ColorPicker.FindName('cpHex').Focus() })
+    [void]$w.ShowDialog()
+}
+
+function Invoke-CustomPanelBackgroundDeferred {
+    try { Invoke-CustomPanelBackground }
+    catch { try { Write-NotchLog "custom background picker: $($_.Exception.Message)" } catch { } }
 }
 
 function New-RoundRectPath([single]$X, [single]$Y, [single]$W, [single]$H, [single]$R) {
@@ -1211,6 +1296,7 @@ $script:ProviderWebsites = @{
     codex  = 'https://chatgpt.com/codex'
     cursor = 'https://cursor.com/'
     grok   = 'https://grok.com/'
+    deepseek = 'https://chat.deepseek.com/'
 }
 
 function Get-ProviderPackageAppId([string]$Key) {
@@ -1279,16 +1365,490 @@ $script:AccordionKey = $null
 $script:AccordionWheelClock = [System.Diagnostics.Stopwatch]::StartNew()
 $script:AccordionWheelAt = -1000.0
 
+# The card the user picked last (click or wheel), kept as LastCard across
+# restarts. Only Save-UserCard writes it: layout passes and fallbacks (a
+# provider not loaded yet at startup, the background self-check) must not.
+function Save-UserCard([string]$Key) {
+    if (-not $Key -or -not $script:Cfg -or $script:SnapSuppressSave) { return }
+    if ([string]$script:Cfg['LastCard'] -eq $Key) { return }
+    $script:Cfg['LastCard'] = $Key
+    # Saved when the app is idle, never in the middle of the switch animation.
+    try { [void]$script:window.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::ApplicationIdle, [Action]{ try { Save-UnifiedState } catch { } }) } catch { }
+}
+
+# Which card the panel should show: the user's pick when that provider is
+# available, else the one on screen, else the first.
+function Get-PreferredCard {
+    $keys = @([string[]](Get-EnabledProviderKeys))
+    if ($keys.Count -eq 0) { return '' }
+    $saved = if ($script:Cfg) { [string]$script:Cfg['LastCard'] } else { '' }
+    if ($saved -and $keys -contains $saved) { return $saved }
+    $cur = [string]$script:AccordionKey
+    if ($cur -and $keys -contains $cur) { return $cur }
+    return [string]$keys[0]
+}
+
+function Test-CardRailMode {
+    # The concise hero + right-side card rail is now the only expanded layout,
+    # regardless of how many providers the user has enabled.
+    return $true
+}
+
+# True when only one AI is switched on: there is nothing to put in the rail,
+# so its hero card takes the whole width and the wheel turns pages instead.
+function Test-SingleProviderCard {
+    return (@([string[]](Get-EnabledProviderKeys)).Count -le 1)
+}
+
+function Set-CardLayoutColumns([bool]$RailMode) {
+    $hostGrid = $script:window.FindName('sectionStack')
+    if (-not $hostGrid -or $hostGrid.ColumnDefinitions.Count -lt 2) { return }
+    $want = if ($RailMode -and -not (Test-SingleProviderCard)) { 132.0 } else { 0.0 }
+    if ([math]::Abs([double]$hostGrid.ColumnDefinitions[1].Width.Value - $want) -lt 0.5) { return }
+    $hostGrid.ColumnDefinitions[1].Width = New-Object System.Windows.GridLength($want)
+    # The meters fill the hero's width: re-fit them to the new column.
+    if ($script:NotchParts -and $script:NotchParts.Content -and (Get-Command Set-NotchContentWidth -ErrorAction SilentlyContinue)) {
+        try { Set-NotchContentWidth ([double]$script:NotchParts.Content.Width) } catch { }
+    }
+}
+
+function Set-LegacyCardChrome([string]$Key, [int]$Row, [bool]$Expanded) {
+    $section = $script:window.FindName($Key + 'Section')
+    $header = $script:window.FindName($Key + 'Header')
+    if (-not $section -or -not $header) { return }
+    [System.Windows.Controls.Grid]::SetColumn($section, 0)
+    [System.Windows.Controls.Grid]::SetRow($section, $Row)
+    [System.Windows.Controls.Grid]::SetRowSpan($section, 1)
+    $section.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Stretch
+    $section.VerticalAlignment = [System.Windows.VerticalAlignment]::Top
+    $section.Padding = New-Object System.Windows.Thickness(12,10,12,4)
+    $section.Margin = New-Object System.Windows.Thickness(0,0,0,8)
+    $section.CornerRadius = New-Object System.Windows.CornerRadius(14)
+    $header.Margin = if ($Expanded) { New-Object System.Windows.Thickness(0,0,0,10) } else { New-Object System.Windows.Thickness(0) }
+    $grid = $header.Child
+    if ($grid -and $grid.Children) {
+        foreach ($child in @($grid.Children)) {
+            $col = [System.Windows.Controls.Grid]::GetColumn($child)
+            $child.Visibility = if ($col -eq 4) { [System.Windows.Visibility]::Collapsed } else { [System.Windows.Visibility]::Visible }
+            if ($col -eq 1 -and $child -is [System.Windows.Controls.TextBlock]) {
+                $child.FontSize = 16.5
+                $child.Margin = New-Object System.Windows.Thickness(10,0,8,1)
+            }
+        }
+    }
+    $tile = $script:window.FindName($Key + 'IconTile')
+    if ($tile) { $tile.Width = 30; $tile.Height = 30; $tile.CornerRadius = New-Object System.Windows.CornerRadius(8) }
+}
+
+function Start-CardRailTransition($Section, [bool]$Opening, [int]$DelayMs = 0) {
+    if (-not $Section) { return }
+    $group = New-Object System.Windows.Media.TransformGroup
+    $scale = New-Object System.Windows.Media.ScaleTransform
+    $move = New-Object System.Windows.Media.TranslateTransform
+    $group.Children.Add($scale); $group.Children.Add($move)
+    $Section.RenderTransformOrigin = New-Object System.Windows.Point(0.5, 0.5)
+    $Section.RenderTransform = $group
+
+    # The rail cards spring out of the hero instead of flashing into their
+    # final slot.  Keeping opacity high is important on a dark translucent UI:
+    # a fade from zero looks like a dropped frame rather than motion.
+    $fromScale = if ($Opening) { 0.78 } else { 1.14 }
+    $fromX = if ($Opening) { 42.0 } else { -24.0 }
+    $scale.ScaleX = 1.0; $scale.ScaleY = 1.0; $move.X = 0.0
+    $Section.Opacity = 1.0
+    $ease = New-Object System.Windows.Media.Animation.BackEase
+    $ease.Amplitude = 0.18
+    $ease.EasingMode = [System.Windows.Media.Animation.EasingMode]::EaseOut
+    $dur = [System.Windows.Duration]([TimeSpan]::FromMilliseconds($(if ($Opening) { 380 } else { 300 })))
+    foreach ($pair in @(
+        @($scale, [System.Windows.Media.ScaleTransform]::ScaleXProperty, $fromScale, 1.0),
+        @($scale, [System.Windows.Media.ScaleTransform]::ScaleYProperty, $fromScale, 1.0),
+        @($move, [System.Windows.Media.TranslateTransform]::XProperty, $fromX, 0.0),
+        @($Section, [System.Windows.UIElement]::OpacityProperty, 0.88, 1.0)
+    )) {
+        $anim = New-Object System.Windows.Media.Animation.DoubleAnimation([double]$pair[2], [double]$pair[3], $dur)
+        $anim.EasingFunction = $ease
+        if ($DelayMs -gt 0) { $anim.BeginTime = [TimeSpan]::FromMilliseconds($DelayMs) }
+        $anim.FillBehavior = [System.Windows.Media.Animation.FillBehavior]::Stop
+        $pair[0].BeginAnimation($pair[1], $anim)
+    }
+}
+
+function Start-CardHeroExit($Section) {
+    if (-not $Section) { return }
+    $group = New-Object System.Windows.Media.TransformGroup
+    $scale = New-Object System.Windows.Media.ScaleTransform
+    $move = New-Object System.Windows.Media.TranslateTransform
+    [void]$group.Children.Add($scale); [void]$group.Children.Add($move)
+    $Section.RenderTransformOrigin = New-Object System.Windows.Point(0.5, 0.5)
+    $Section.RenderTransform = $group
+    $ease = New-Object System.Windows.Media.Animation.CubicEase
+    $ease.EasingMode = [System.Windows.Media.Animation.EasingMode]::EaseIn
+    $dur = [System.Windows.Duration]([TimeSpan]::FromMilliseconds(145))
+    foreach ($pair in @(
+        @($scale, [System.Windows.Media.ScaleTransform]::ScaleXProperty, 1.0, 0.93),
+        @($scale, [System.Windows.Media.ScaleTransform]::ScaleYProperty, 1.0, 0.93),
+        @($move, [System.Windows.Media.TranslateTransform]::XProperty, 0.0, 24.0)
+    )) {
+        $anim = New-Object System.Windows.Media.Animation.DoubleAnimation([double]$pair[2], [double]$pair[3], $dur)
+        $anim.EasingFunction = $ease
+        $anim.FillBehavior = [System.Windows.Media.Animation.FillBehavior]::HoldEnd
+        $pair[0].BeginAnimation($pair[1], $anim)
+    }
+}
+
+function Get-CardRailLayoutSnapshot {
+    $layoutHost = $script:window.FindName('sectionStack')
+    $snap = @{}
+    if (-not $layoutHost) { return $snap }
+    foreach ($key in [string[]](Get-EnabledProviderKeys)) {
+        $section = $script:window.FindName($key + 'Section')
+        if (-not $section) { continue }
+        try {
+            $point = $section.TranslatePoint((New-Object System.Windows.Point(0,0)), $layoutHost)
+            $snap[$key] = @{
+                X = [double]$point.X; Y = [double]$point.Y
+                Width = [double]$section.ActualWidth; Height = [double]$section.ActualHeight
+            }
+        } catch { }
+    }
+    return $snap
+}
+
+# A still picture of a card, placed exactly over it (top-left of the hero
+# slot, same size). Rendered through a VisualBrush so the card's own offset
+# in the grid does not shift the picture.
+function New-CardSnapshot($Section) {
+    $w = [double]$Section.ActualWidth; $h = [double]$Section.ActualHeight
+    $scale = 1.0
+    try { $scale = [System.Windows.Media.VisualTreeHelper]::GetDpi($Section).DpiScaleX } catch { }
+    $pw = [int][math]::Ceiling($w * $scale); $ph = [int][math]::Ceiling($h * $scale)
+    $rtb = New-Object System.Windows.Media.Imaging.RenderTargetBitmap($pw, $ph, (96.0 * $scale), (96.0 * $scale), [System.Windows.Media.PixelFormats]::Pbgra32)
+    $dv = New-Object System.Windows.Media.DrawingVisual
+    $ctx = $dv.RenderOpen()
+    $brush = New-Object System.Windows.Media.VisualBrush($Section)
+    $ctx.DrawRectangle($brush, $null, (New-Object System.Windows.Rect(0, 0, $w, $h)))
+    $ctx.Close()
+    $rtb.Render($dv)
+    $rtb.Freeze()
+    $img = New-Object System.Windows.Controls.Image
+    $img.Source = $rtb
+    $img.Width = $w; $img.Height = $h
+    $img.Stretch = [System.Windows.Media.Stretch]::Fill
+    $img.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Left
+    $img.VerticalAlignment = [System.Windows.VerticalAlignment]::Top
+    $img.IsHitTestVisible = $false
+    $img.Margin = New-Object System.Windows.Thickness($Section.Margin.Left, $Section.Margin.Top, 0, 0)
+    return $img
+}
+
+# Page-turn motion for one element: X from -> to on the island spring, and
+# opacity on the first 55% of the time (same numbers as Switch-IslandPage).
+function Start-CardSlide($Element, [double]$FromX, [double]$ToX, [double]$FromA, [double]$ToA, [int]$DurationMs, [switch]$FadeOnly) {
+    if (-not $Element) { return }
+    $Element.CacheMode = New-Object System.Windows.Media.BitmapCache
+    $ease = if (Get-Command Get-IslandSpringEase -ErrorAction SilentlyContinue) { Get-IslandSpringEase } else { $null }
+    if (-not $FadeOnly) {
+        $move = New-Object System.Windows.Media.TranslateTransform($FromX, 0)
+        $Element.RenderTransformOrigin = New-Object System.Windows.Point(0, 0)
+        $Element.RenderTransform = $move
+        $x = New-Object System.Windows.Media.Animation.DoubleAnimation($FromX, $ToX, [System.Windows.Duration]([TimeSpan]::FromMilliseconds($DurationMs)))
+        if ($ease) { $x.EasingFunction = $ease }
+        [System.Windows.Media.Animation.Timeline]::SetDesiredFrameRate($x, [Nullable[int]]60)
+        $move.BeginAnimation([System.Windows.Media.TranslateTransform]::XProperty, $x)
+    }
+    $fadeEase = New-Object System.Windows.Media.Animation.CubicEase
+    $fadeEase.EasingMode = [System.Windows.Media.Animation.EasingMode]::EaseOut
+    $a = New-Object System.Windows.Media.Animation.DoubleAnimation($FromA, $ToA, [System.Windows.Duration]([TimeSpan]::FromMilliseconds([int]($DurationMs * 0.55))))
+    $a.EasingFunction = $fadeEase
+    # Fades that end visible hand the value back; fades out hold at 0 until
+    # the element (the snapshot) is removed.
+    $a.FillBehavior = if ($ToA -ge 0.999) { [System.Windows.Media.Animation.FillBehavior]::Stop } else { [System.Windows.Media.Animation.FillBehavior]::HoldEnd }
+    $Element.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $a)
+}
+
+# A card that changed role (became the hero, or left it for the rail) does
+# not stretch from its old box - a scaled bitmap looked like a shake. It
+# appears in its new slot: a short slide from the side it came from plus a
+# fade, on the island spring, cached as a bitmap for the move.
+function Start-CardRoleEnter($Section, [double]$FromX, [double]$FromY, [int]$DurationMs) {
+    if (-not $Section) { return }
+    $move = New-Object System.Windows.Media.TranslateTransform($FromX, $FromY)
+    $Section.RenderTransformOrigin = New-Object System.Windows.Point(0, 0)
+    $Section.RenderTransform = $move
+    $Section.CacheMode = New-Object System.Windows.Media.BitmapCache
+    $ease = if (Get-Command Get-IslandSpringEase -ErrorAction SilentlyContinue) { Get-IslandSpringEase } else { $null }
+    $dur = [System.Windows.Duration]([TimeSpan]::FromMilliseconds($DurationMs))
+    $first = $true
+    foreach ($pair in @(@([System.Windows.Media.TranslateTransform]::XProperty, $FromX), @([System.Windows.Media.TranslateTransform]::YProperty, $FromY))) {
+        $a = New-Object System.Windows.Media.Animation.DoubleAnimation([double]$pair[1], 0.0, $dur)
+        if ($ease) { $a.EasingFunction = $ease }
+        $a.FillBehavior = [System.Windows.Media.Animation.FillBehavior]::Stop
+        [System.Windows.Media.Animation.Timeline]::SetDesiredFrameRate($a, [Nullable[int]]60)
+        if ($first) {
+            $target = $Section
+            $a.add_Completed({ $target.CacheMode = $null }.GetNewClosure())
+            $first = $false
+        }
+        $move.BeginAnimation($pair[0], $a)
+    }
+    $fadeEase = New-Object System.Windows.Media.Animation.CubicEase
+    $fadeEase.EasingMode = [System.Windows.Media.Animation.EasingMode]::EaseOut
+    $fade = New-Object System.Windows.Media.Animation.DoubleAnimation(0.0, 1.0, [System.Windows.Duration]([TimeSpan]::FromMilliseconds([int]($DurationMs * 0.55))))
+    $fade.EasingFunction = $fadeEase
+    $fade.FillBehavior = [System.Windows.Media.Animation.FillBehavior]::Stop
+    $Section.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fade)
+}
+
+function Start-CardFlipAnimation($Section, $Before, $After, [int]$DurationMs, [switch]$Dissolve, [switch]$NoScale) {
+    if (-not $Section -or -not $Before -or -not $After) { return }
+    $sx = if ([double]$After.Width -gt 1) { [double]$Before.Width / [double]$After.Width } else { 1.0 }
+    $sy = if ([double]$After.Height -gt 1) { [double]$Before.Height / [double]$After.Height } else { 1.0 }
+    if ($NoScale) { $sx = 1.0; $sy = 1.0 }
+    $dx = [double]$Before.X - [double]$After.X
+    $dy = [double]$Before.Y - [double]$After.Y
+    $group = New-Object System.Windows.Media.TransformGroup
+    $scale = New-Object System.Windows.Media.ScaleTransform
+    $move = New-Object System.Windows.Media.TranslateTransform
+    [void]$group.Children.Add($scale); [void]$group.Children.Add($move)
+    $Section.RenderTransformOrigin = New-Object System.Windows.Point(0,0)
+    $Section.RenderTransform = $group
+    # Cache each already-laid-out card as a bitmap for the short FLIP. This
+    # avoids re-rasterising its text, icons and meters on every transform frame.
+    $Section.CacheMode = New-Object System.Windows.Media.BitmapCache
+    $scale.ScaleX = 1; $scale.ScaleY = 1; $move.X = 0; $move.Y = 0
+    # EaseOut is front-loaded: the card reaches close to its final size in the
+    # first third, so the briefly-distorted "scaled bitmap" phase is over fast
+    # and the move reads as crisp rather than floaty. (A symmetric InOut felt
+    # slow; the old exponential EaseOut jumped and then appeared to hang.)
+    # The island spring (zeta 0.8, src\IslandPages.ps1) when available, so cards
+    # travel like the notch and pages do; CubicEase EaseOut otherwise.
+    $ease = $null
+    if (Get-Command Get-IslandSpringEase -ErrorAction SilentlyContinue) { try { $ease = Get-IslandSpringEase } catch { $ease = $null } }
+    if (-not $ease) {
+        $ease = New-Object System.Windows.Media.Animation.CubicEase
+        $ease.EasingMode = [System.Windows.Media.Animation.EasingMode]::EaseOut
+    }
+    $dur = [System.Windows.Duration]([TimeSpan]::FromMilliseconds($DurationMs))
+    # The cache is released by the card switch's settle timer, after the
+    # last frame, so the motion's final frames stay cheap.
+    foreach ($pair in @(
+        @($scale, [System.Windows.Media.ScaleTransform]::ScaleXProperty, $sx, 1.0),
+        @($scale, [System.Windows.Media.ScaleTransform]::ScaleYProperty, $sy, 1.0),
+        @($move, [System.Windows.Media.TranslateTransform]::XProperty, $dx, 0.0),
+        @($move, [System.Windows.Media.TranslateTransform]::YProperty, $dy, 0.0)
+    )) {
+        $anim = New-Object System.Windows.Media.Animation.DoubleAnimation([double]$pair[2], [double]$pair[3], $dur)
+        $anim.EasingFunction = $ease
+        # HoldEnd at identity (1,1,0,0) instead of Stop: no property flip on
+        # the last frame.
+        $anim.FillBehavior = [System.Windows.Media.Animation.FillBehavior]::HoldEnd
+        [System.Windows.Media.Animation.Timeline]::SetDesiredFrameRate($anim, [Nullable[int]]60)
+        $pair[0].BeginAnimation($pair[1], $anim)
+    }
+    # Only the two cards that change role (hero <-> rail) swap their content, so
+    # only they get a cross-dissolve. Starting at 0.5 (not 0) softens the content
+    # change without a blink, masking the moment the detailed hero becomes the
+    # small-card bitmap. Cards that merely shift position stay fully opaque.
+    if ($Dissolve) {
+        # Original cross-dissolve: from half opacity over the whole move.
+        $fade = New-Object System.Windows.Media.Animation.DoubleAnimation(0.5, 1.0, $dur)
+        $fadeEase = New-Object System.Windows.Media.Animation.CubicEase
+        $fadeEase.EasingMode = [System.Windows.Media.Animation.EasingMode]::EaseOut
+        $fade.EasingFunction = $fadeEase
+        $fade.FillBehavior = [System.Windows.Media.Animation.FillBehavior]::Stop
+        $Section.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fade)
+    }
+}
+
+function Set-CardRailOrderForSwitch([string]$OldKey, [string]$NewKey, [string]$Mode) {
+    $order = @($script:CardRailOrder)
+    if ($order.Count -eq 0 -or -not ($order -contains $NewKey)) {
+        $order = @([string[]](Get-EnabledProviderKeys) | Where-Object { $_ -ne $OldKey })
+    }
+    $rest = @($order | Where-Object { $_ -ne $NewKey })
+    if ($Mode -eq 'WheelDown') {
+        $script:CardRailOrder = @($rest + $OldKey)
+    } elseif ($Mode -eq 'WheelUp') {
+        $script:CardRailOrder = @($OldKey) + $rest
+    } else {
+        # Direct click is a true slot swap: the old hero lands exactly where
+        # the clicked small card was, while every unrelated card stays still.
+        $slot = [array]::IndexOf([object[]]$order, [object]$NewKey)
+        if ($slot -lt 0) { $slot = 0 }
+        $next = @($order)
+        $next[$slot] = $OldKey
+        $script:CardRailOrder = $next
+    }
+}
+
+function Switch-AccordionCardAnimated([string]$Key, [string]$Mode = 'Click') {
+    if (-not (Test-CardRailMode)) { Set-AccordionCard $Key; return }
+    if (-not $script:window -or -not $Key -or $Key -eq $script:AccordionKey) { return }
+    if ($script:CardRailAnimating) {
+        # Never queue wheel input behind the current animation.  A wheel burst
+        # must stop when the user's hand stops, rather than draining afterwards.
+        # Direct clicks still keep only the latest explicit destination.
+        if ($Mode -notlike 'Wheel*') { $script:CardRailQueued = @{ Key = $Key; Mode = $Mode } }
+        return
+    }
+    $script:CardRailAnimating = $true
+    if (([System.Management.Automation.PSTypeName]'AIUsageFrameProbe').Type) { [AIUsageFrameProbe]::Start(); $script:FrameProbeLabel = "card $($script:AccordionKey)->$Key" }
+    $prepClock = [System.Diagnostics.Stopwatch]::StartNew()
+    $oldKey = [string]$script:AccordionKey
+    # The original motion (FLIP): the clicked small card grows out of its
+    # corner slot into the hero, and the old hero shrinks back into the
+    # rail slot the other card left; the two cards that swap roles
+    # cross-dissolve, the rest only shift. What made it stutter was the work
+    # around it (re-measuring every hero, timers on the UI thread, waiting
+    # for mouse-up) - all fixed - so the motion itself is back as it was,
+    # on the island spring.
+    $duration = 380
+    if (Get-Command Get-NotchSpeedFactor -ErrorAction SilentlyContinue) { $duration = [int]($duration / (Get-NotchSpeedFactor)) }
+    $before = Get-CardRailLayoutSnapshot
+    # Cards sliding under a still pointer change their hover state mid-move,
+    # which forces the cached bitmaps to re-render (the hitch ~5 frames in).
+    # The cards area ignores the mouse for the length of the move.
+    $stackHost = $script:window.FindName('sectionStack')
+    if ($stackHost) { $stackHost.IsHitTestVisible = $false }
+    Set-CardRailOrderForSwitch $oldKey $Key $Mode
+    Set-AccordionCard $Key -NoLayout
+    Save-UserCard $Key
+    # Hero and rail sizes are fixed (all heroes share one height), so the
+    # panel does not change size here; the settle timer runs Resize-ToContent.
+    try { $script:window.UpdateLayout() } catch { }
+    $after = Get-CardRailLayoutSnapshot
+    $prepMs = $prepClock.Elapsed.TotalMilliseconds
+    if ($prepMs -gt 60) { Write-NotchLog ("card switch {0} -> {1}: {2:0} ms before animating" -f $oldKey, $Key, $prepMs) }
+    foreach ($provider in [string[]](Get-EnabledProviderKeys)) {
+        if (-not $before.ContainsKey($provider) -or -not $after.ContainsKey($provider)) { continue }
+        $b = $before[$provider]; $a = $after[$provider]
+        $moved = ([math]::Abs($b.X-$a.X) -gt 0.5 -or [math]::Abs($b.Y-$a.Y) -gt 0.5 -or
+                  [math]::Abs($b.Width-$a.Width) -gt 0.5 -or [math]::Abs($b.Height-$a.Height) -gt 0.5)
+        if ($moved) {
+            # Only the card growing into the hero dissolves in (its content
+            # changes most visibly); the shrinking one just scales, which
+            # halves the opacity compositing on the layered window.
+            $dissolve = ($provider -eq $Key)
+            Start-CardFlipAnimation ($script:window.FindName($provider + 'Section')) $b $a $duration -Dissolve:$dissolve
+        }
+    }
+
+    if ($script:CardRailSettleTimer) { $script:CardRailSettleTimer.Stop() }
+    $timer = New-Object System.Windows.Threading.DispatcherTimer
+    $script:CardRailSettleTimer = $timer
+    $timer.Interval = [TimeSpan]::FromMilliseconds($duration + 20)
+    $timer.Add_Tick({
+        param($sender, $eventArgs)
+        $sender.Stop()
+        $script:CardRailAnimating = $false
+        if (([System.Management.Automation.PSTypeName]'AIUsageFrameProbe').Type) { $fp = [AIUsageFrameProbe]::Stop(); if ($fp) { Write-NotchLog ("frames {0}: {1}" -f $script:FrameProbeLabel, $fp) } }
+        # Motion is over: drop the bitmap caches now (not on each animation's
+        # Completed, which re-rendered cards on the last frames) and give the
+        # cards the mouse back.
+        foreach ($p in [string[]](Get-EnabledProviderKeys)) {
+            $s = $script:window.FindName($p + 'Section')
+            if ($s) { $s.CacheMode = $null }
+        }
+        $sh = $script:window.FindName('sectionStack')
+        if ($sh) { $sh.IsHitTestVisible = $true }
+        # Deferred from the switch itself: settle the stage once motion is over.
+        try { Resize-ToContent } catch { }
+        # No squash here: card switches keep the island's size, and Nusa only
+        # uses squash on size changes; the extra wobble read as a shake.
+        $queued = $script:CardRailQueued
+        $script:CardRailQueued = $null
+        if ($queued -and $queued.Key -and $queued.Key -ne $script:AccordionKey) {
+            Switch-AccordionCardAnimated ([string]$queued.Key) ([string]$queued.Mode)
+        }
+    })
+    $timer.Start()
+}
+
+function Set-CardRailChrome([string]$Key, [bool]$Open, [int]$SideRow, [switch]$Animate) {
+    $section = $script:window.FindName($Key + 'Section')
+    $header = $script:window.FindName($Key + 'Header')
+    if (-not $section -or -not $header) { return }
+
+    [System.Windows.Controls.Grid]::SetColumn($section, $(if ($Open) { 0 } else { 1 }))
+    # Keep every small card in one top-anchored rail. Using separate Auto rows
+    # let Grid spread them through the hero's full height when providers changed.
+    [System.Windows.Controls.Grid]::SetRow($section, 0)
+    [System.Windows.Controls.Grid]::SetRowSpan($section, 1)
+    $section.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Stretch
+    $section.VerticalAlignment = [System.Windows.VerticalAlignment]::Top
+    $section.Padding = if ($Open) { New-Object System.Windows.Thickness(12,10,12,4) } else { New-Object System.Windows.Thickness(8) }
+    # 44 DIPs keeps the rail compact while leaving each card its own outline.
+    $railTop = [double]$SideRow * 44.0
+    # The 10 DIP gap separates the hero from the rail; a lone hero has none.
+    $heroGap = if (Test-SingleProviderCard) { 0 } else { 10 }
+    $section.Margin = if ($Open) { New-Object System.Windows.Thickness(0,0,$heroGap,0) } else { New-Object System.Windows.Thickness(0,$railTop,0,0) }
+    $section.CornerRadius = New-Object System.Windows.CornerRadius($(if ($Open) { 14 } else { 11 }))
+    $header.Margin = if ($Open) { New-Object System.Windows.Thickness(0,0,0,10) } else { New-Object System.Windows.Thickness(0) }
+
+    $grid = $header.Child
+    if ($grid -and $grid.Children) {
+        foreach ($child in @($grid.Children)) {
+            $col = [System.Windows.Controls.Grid]::GetColumn($child)
+            if ($Open) {
+                # Header detail is intentionally quiet until its existing update
+                # path chooses to show it; the other controls return on the hero.
+                $child.Visibility = if ($col -eq 4) { [System.Windows.Visibility]::Collapsed } else { [System.Windows.Visibility]::Visible }
+            } else {
+                $child.Visibility = if ($col -le 1) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+            }
+            if ($col -eq 1 -and $child -is [System.Windows.Controls.TextBlock]) {
+                $child.FontSize = if ($Open) { 16.5 } else { 11.5 }
+                $child.Margin = if ($Open) { New-Object System.Windows.Thickness(10,0,8,1) } else { New-Object System.Windows.Thickness(6,0,0,0) }
+                $child.TextTrimming = [System.Windows.TextTrimming]::CharacterEllipsis
+                $child.TextWrapping = [System.Windows.TextWrapping]::NoWrap
+            }
+        }
+    }
+    $tile = $script:window.FindName($Key + 'IconTile')
+    if ($tile) {
+        $tile.Width = if ($Open) { 30 } else { 24 }
+        $tile.Height = if ($Open) { 30 } else { 24 }
+        $tile.CornerRadius = New-Object System.Windows.CornerRadius($(if ($Open) { 8 } else { 7 }))
+    }
+    if ($Animate) { Start-CardRailTransition $section $Open 0 }
+}
+
 function Set-AccordionCard([string]$Key, [switch]$NoLayout) {
     if (-not $script:window) { return }
     # Get-EnabledProviderKeys returns its array unrolled-proof (,$keys): take
     # it as is - wrapping it in @() would nest it.
     $all = Get-EnabledProviderKeys
+    if (-not (Test-CardRailMode)) {
+        Set-CardLayoutColumns $false
+        $row = 0
+        foreach ($k in $all) {
+            $open = ([string]$k -eq [string]$Key)
+            Set-Section $k $open
+            Set-LegacyCardChrome $k $row $open
+            $row++
+        }
+        $script:CardRailOrder = @()
+        $script:AccordionKey = $Key
+        if (-not $NoLayout) { Resize-ToContent }
+        return
+    }
+    Set-CardLayoutColumns $true
+    $rail = @($script:CardRailOrder)
+    $expected = @([string[]]$all | Where-Object { $_ -ne $Key })
+    if ($rail.Count -ne $expected.Count -or @($expected | Where-Object { $rail -notcontains $_ }).Count -gt 0) {
+        $rail = $expected
+        $script:CardRailOrder = $rail
+    }
+    $rowByKey = @{}
+    for ($i = 0; $i -lt $rail.Count; $i++) { $rowByKey[[string]$rail[$i]] = $i }
     foreach ($k in $all) {
         $open = ([string]$k -eq [string]$Key)
         $body = $script:window.FindName($k + 'Body')
         $wasOpen = ($body -and $body.Visibility -eq [System.Windows.Visibility]::Visible)
         Set-Section $k $open
+        $sideRow = if ($open) { 0 } elseif ($rowByKey.ContainsKey([string]$k)) { [int]$rowByKey[[string]$k] } else { 0 }
+        Set-CardRailChrome $k $open $sideRow -Animate:(-not $NoLayout)
         if ($open -and -not $wasOpen -and $body -and -not $NoLayout) {
             # Fade the newly opened details in while the silhouette resizes.
             $a = New-Object System.Windows.Media.Animation.DoubleAnimation(0.0, [double]$body.Opacity, [System.Windows.Duration]([TimeSpan]::FromMilliseconds(200)))
@@ -1297,22 +1857,299 @@ function Set-AccordionCard([string]$Key, [switch]$NoLayout) {
         }
     }
     $script:AccordionKey = $Key
+    Sync-CardRailFill
     if (-not $NoLayout) { Resize-ToContent }
 }
 
+# The small rail cards share the hero card's height: each takes an equal
+# slice, 10-DIP gaps between them (the same gutter as hero-to-rail), so the
+# rail's top and bottom edges line up with the hero's.
+$script:CardRailGap = 10.0
+$script:CardRailHooked = @{}
+$script:HeroCardHeight = 172.0
+$script:CardRailSyncing = $false
+$script:CardRailFillQueued = $false
+$script:HeroCardMeasured = $false
+# $false = original compact rail: small cards keep their natural height, sit
+# in 44-DIP slots from the top and show icon + name only. $true = stretch
+# them to the hero's height with usage numbers (tried 2026-11-09, reverted
+# at the user's request).
+$script:CardRailRich = $false
+$script:CardRailSummary = @{}
+
+# Natural hero height of every enabled provider. The current hero is read
+# from its content; each rail card is briefly laid out as a hero (body shown,
+# hero chrome), measured at the hero's width, and put back - all inside one
+# synchronous pass on the UI thread, so nothing of it is ever rendered.
+function Get-SectionNaturalHeight($Section) {
+    if (-not $Section -or $Section.Child -isnot [System.Windows.UIElement]) { return 0.0 }
+    $pad = $Section.Padding; $bd = $Section.BorderThickness
+    return [double]$Section.Child.DesiredSize.Height + $pad.Top + $pad.Bottom + $bd.Top + $bd.Bottom
+}
+
+function Measure-HeroCardHeights([string]$HeroKey, $Hero, [object[]]$Rail) {
+    $max = Get-SectionNaturalHeight $Hero
+    $seen = @(('{0}={1:0.#}' -f $HeroKey, $max))
+    $width = [double]$Hero.ActualWidth
+    if ($width -le 0) { return [math]::Ceiling($max) }
+    for ($i = 0; $i -lt @($Rail).Count; $i++) {
+        $k = [string]$Rail[$i]
+        $sec = $script:window.FindName($k + 'Section')
+        if (-not $sec -or $sec.Visibility -ne [System.Windows.Visibility]::Visible) { continue }
+        $savedH = $sec.Height; $savedMin = $sec.MinHeight
+        try {
+            Set-Section $k $true
+            Set-CardRailChrome $k $true 0
+            $sec.Height = [double]::NaN; $sec.MinHeight = 0
+            # Same available width as the real hero slot (hero width + its margins).
+            $avail = $width + $sec.Margin.Left + $sec.Margin.Right
+            $sec.Measure((New-Object System.Windows.Size($avail, [double]::PositiveInfinity)))
+            $h = Get-SectionNaturalHeight $sec
+            $seen += ('{0}={1:0.#}' -f $k, $h)
+            if ($h -gt $max) { $max = $h }
+        } catch { } finally {
+            Set-Section $k $false
+            Set-CardRailChrome $k $false $i
+            $sec.MinHeight = $savedMin
+            $sec.Height = $savedH
+        }
+    }
+    $result = [math]::Ceiling($max)
+    if ($result -ne $script:HeroCardHeightLogged) {
+        $script:HeroCardHeightLogged = $result
+        Write-NotchLog ("hero card height {0} (natural: {1}; width {2:0})" -f $result, ($seen -join ', '), $width)
+    }
+    return $result
+}
+
+# Small cards carry the short provider name ("DeepSeek", not the hero's
+# "打开 DeepSeek Harness"); the hero gets its own text back.
+function Sync-CardRailHeaderLabel([string]$Key, [bool]$IsRail) {
+    $header = $script:window.FindName($Key + 'Header')
+    if (-not $header -or -not $header.Child) { return }
+    foreach ($child in @($header.Child.Children)) {
+        if ($child -isnot [System.Windows.Controls.TextBlock] -or [System.Windows.Controls.Grid]::GetColumn($child) -ne 1) { continue }
+        if ($null -eq $child.Tag -or $child.Tag -isnot [hashtable]) { $child.Tag = @{ HeroText = [string]$child.Text } }
+        if ($IsRail) {
+            if (-not $child.Tag.Rail -and [string]$child.Text) { $child.Tag.HeroText = [string]$child.Text }
+            $child.Tag.Rail = $true
+            $short = if ($script:ProviderMeta -and $script:ProviderMeta.Contains($Key)) { [string]$script:ProviderMeta[$Key].Name } else { '' }
+            if ($short -and $child.Text -ne $short) { $child.Text = $short }
+            # Leave room on the right for the inline usage number.
+            $want = New-Object System.Windows.Thickness(6, 0, 40, 0)
+            if ($child.Margin -ne $want) { $child.Margin = $want }
+        } elseif ($child.Tag.Rail) {
+            $child.Tag.Rail = $false
+            if ($child.Tag.HeroText) { $child.Text = [string]$child.Tag.HeroText }
+        }
+    }
+}
+
+# Compact small cards (too short for the stacked summary) show the main
+# number on the name line, right-aligned and coloured by usage band.
+function Sync-CardRailInlineMetric([string]$Key, $Section, [bool]$Show) {
+    $header = $script:window.FindName($Key + 'Header')
+    if (-not $header -or $header.Child -isnot [System.Windows.Controls.Grid]) { return }
+    $grid = $header.Child
+    $tb = $null
+    foreach ($c in @($grid.Children)) { if ($c -is [System.Windows.Controls.TextBlock] -and [string]$c.Name -eq '') { if ($c.Tag -is [string] -and $c.Tag -eq 'railMetric') { $tb = $c } } }
+    if (-not $tb) {
+        $tb = New-Object System.Windows.Controls.TextBlock
+        $tb.Tag = 'railMetric'
+        $tb.FontSize = 12
+        $tb.FontFamily = New-Object System.Windows.Media.FontFamily('Segoe UI Semibold')
+        $tb.HorizontalAlignment = 'Right'
+        $tb.VerticalAlignment = 'Center'
+        $tb.IsHitTestVisible = $false
+        [System.Windows.Controls.Grid]::SetColumn($tb, 0)
+        [System.Windows.Controls.Grid]::SetColumnSpan($tb, [math]::Max(1, $grid.ColumnDefinitions.Count))
+        [void]$grid.Children.Add($tb)
+    }
+    if (-not $Show) { $tb.Visibility = [System.Windows.Visibility]::Collapsed; return }
+    $main = $null; $text = '--'
+    foreach ($m in @(Get-ProviderUsedMetrics $Key)) {
+        if ($m.ContainsKey('Text') -and $m.Text) { $text = [string]$m.Text; break }
+        if ($null -ne $m.Value) { $main = [double]$m.Value; $text = ('{0:0}%' -f $main) }
+        # Prefer the weekly figure when there are two (it is the binding one).
+        if ($m.Label -eq 'W' -and $null -ne $m.Value) { $main = [double]$m.Value; $text = ('{0:0}%' -f $main) }
+    }
+    if ($null -eq $main -and $Key -eq 'deepseek') { $b = Get-DeepSeekBudget; if ($b) { $main = [double]$b.UsedPct } }
+    $tb.Text = $text
+    $tb.Foreground = NewBrush $(if ($null -ne $main) { Get-UsageBandColor $main } else { '#8E8E93' })
+    $tb.Visibility = [System.Windows.Visibility]::Visible
+}
+
+# A small card tall enough to show more than its name also shows its main
+# usage numbers and a thin meter, so the slot reads as content, not padding.
+function Update-CardRailSummaries {
+    # Off: the user prefers the original compact small cards (icon + name).
+    if (-not $script:CardRailRich) { return }
+    if (-not $script:window -or -not (Test-CardRailMode)) { return }
+    $heroKey = [string]$script:AccordionKey
+    foreach ($k in @([string[]](Get-EnabledProviderKeys))) {
+        $sec = $script:window.FindName($k + 'Section')
+        if (-not $sec -or $sec.Child -isnot [System.Windows.Controls.Panel]) { continue }
+        $sum = $script:CardRailSummary[$k]
+        if (-not $sum -or $sum.Section -ne $sec) {
+            $grid = New-Object System.Windows.Controls.StackPanel
+            $grid.Margin = New-Object System.Windows.Thickness(2, 8, 2, 0)
+            $grid.IsHitTestVisible = $false
+            $text = New-Object System.Windows.Controls.TextBlock
+            $text.FontSize = 12.5
+            $text.FontFamily = New-Object System.Windows.Media.FontFamily('Segoe UI Semibold')
+            $text.Foreground = NewBrush '#F5F5F7'
+            $text.TextTrimming = 'CharacterEllipsis'
+            $track = New-Object System.Windows.Controls.Grid
+            $track.Height = 3
+            $track.Margin = New-Object System.Windows.Thickness(0, 6, 0, 0)
+            $bg = New-Object System.Windows.Controls.Border
+            $bg.Background = NewBrush '#26FFFFFF'; $bg.CornerRadius = New-Object System.Windows.CornerRadius(1.5)
+            $fill = New-Object System.Windows.Controls.Border
+            $fill.CornerRadius = New-Object System.Windows.CornerRadius(1.5)
+            $fill.RenderTransformOrigin = New-Object System.Windows.Point(0, 0.5)
+            $fill.RenderTransform = New-Object System.Windows.Media.ScaleTransform(0, 1)
+            [void]$track.Children.Add($bg); [void]$track.Children.Add($fill)
+            [void]$grid.Children.Add($text); [void]$grid.Children.Add($track)
+            [void]$sec.Child.Children.Add($grid)
+            $sum = @{ Section = $sec; Panel = $grid; Text = $text; Fill = $fill; Track = $track }
+            $script:CardRailSummary[$k] = $sum
+        }
+        $isRail = ($k -ne $heroKey)
+        $roomy = $isRail -and ([double]::IsNaN([double]$sec.Height) -or [double]$sec.Height -ge 66)
+        Sync-CardRailHeaderLabel $k $isRail
+        Sync-CardRailInlineMetric $k $sec ($isRail -and -not $roomy)
+        $sum.Panel.Visibility = if ($roomy) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+        if (-not $roomy) { continue }
+        $metrics = @(Get-ProviderUsedMetrics $k)
+        $parts = @(); $main = $null
+        foreach ($m in $metrics) {
+            if ($m.ContainsKey('Text') -and $m.Text) { $parts += [string]$m.Text; continue }
+            if ($null -eq $m.Value) { $parts += $(if ($m.Label) { "$($m.Label) --" } else { '--' }); continue }
+            $parts += ('{0} {1:0}%' -f $m.Label, [double]$m.Value).Trim()
+            if ($null -eq $main) { $main = [double]$m.Value }
+        }
+        if ($null -eq $main -and $k -eq 'deepseek') { $b = Get-DeepSeekBudget; if ($b) { $main = [double]$b.UsedPct } }
+        $sum.Text.Text = if ($parts.Count) { $parts -join '  ·  ' } else { '--' }
+        $sum.Track.Visibility = if ($null -ne $main) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Hidden }
+        if ($null -ne $main) {
+            $pct = [math]::Max(0.0, [math]::Min(100.0, $main))
+            $sum.Fill.Background = NewBrush (Get-UsageBandColor $pct)
+            $sum.Fill.RenderTransform.ScaleX = $pct / 100.0
+        }
+    }
+}
+# -Measure re-measures every provider's hero height (several full layout
+# passes - slow in PowerShell). Card switches skip it and reuse the cached
+# height; startup, data refreshes and content size changes pass -Measure.
+function Sync-CardRailFill([switch]$Measure) {
+    if (-not $script:window -or -not (Test-CardRailMode)) { return }
+    # Never re-enter: the layout pass below raises SizeChanged on the hero,
+    # which must not start another sync (that loop hung the UI thread).
+    if ($script:CardRailSyncing) { return }
+    $script:CardRailSyncing = $true
+    try { Sync-CardRailFillCore -Measure:($Measure -or -not $script:HeroCardMeasured) } finally { $script:CardRailSyncing = $false }
+}
+
+# SizeChanged handler path: coalesce into one deferred sync after layout.
+function Request-CardRailFill {
+    if ($script:CardRailFillQueued -or -not $script:window) { return }
+    $script:CardRailFillQueued = $true
+    [void]$script:window.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::Background, [Action]{
+        $script:CardRailFillQueued = $false
+        try { if (-not $script:CardRailAnimating) { Sync-CardRailFill -Measure } } catch { }
+        # The AI page may have changed height: keep all pages the same size.
+        if (Get-Command Request-IslandRelayout -ErrorAction SilentlyContinue) { try { Request-IslandRelayout } catch { } }
+    })
+}
+
+function Sync-CardRailFillCore([switch]$Measure) {
+    $heroKey = [string]$script:AccordionKey
+    $hero = $script:window.FindName($heroKey + 'Section')
+    if (-not $hero) { return }
+    $rail = @($script:CardRailOrder | Where-Object { [string]$_ -ne $heroKey })
+    foreach ($k in @([string[]](Get-EnabledProviderKeys))) {
+        $sec = $script:window.FindName($k + 'Section')
+        if ($sec -and -not $script:CardRailHooked.ContainsKey($k)) {
+            $script:CardRailHooked[$k] = $true
+            # The hero grows/shrinks with its content; re-slice the rail then.
+            $sec.Add_SizeChanged({ param($s, $e) if (-not $script:CardRailSyncing -and -not $script:CardRailAnimating -and $e.HeightChanged -and [string]$s.Name -eq ([string]$script:AccordionKey + 'Section')) { Request-CardRailFill } })
+        }
+    }
+    $hero.Height = [double]::NaN
+    if ($hero.Child -is [System.Windows.FrameworkElement]) { $hero.Child.VerticalAlignment = [System.Windows.VerticalAlignment]::Top }
+    # Every provider's hero card has the same height: the tallest natural
+    # height seen so far, never below a floor that fits the usual content.
+    # Switching providers then never resizes the panel.
+    # One height for every hero: the tallest of all providers' hero layouts,
+    # measured up front (Measure-HeroCardHeights), so the first switch to a
+    # taller card no longer grows the panel.
+    if ($Measure -and $hero.IsLoaded) {
+        try { $hero.UpdateLayout() } catch { }
+        $target = Measure-HeroCardHeights $heroKey $hero $rail
+        if ($target -gt 0) { $script:HeroCardHeight = $target; $script:HeroCardMeasured = $true }
+    }
+    if ([math]::Abs([double]$hero.MinHeight - [double]$script:HeroCardHeight) -gt 0.5) { $hero.MinHeight = [double]$script:HeroCardHeight }
+    foreach ($k in @([string[]](Get-EnabledProviderKeys))) {
+        if ($k -ne $heroKey) { $s = $script:window.FindName($k + 'Section'); if ($s -and $s.MinHeight -ne 0) { $s.MinHeight = 0 } }
+    }
+    $n = $rail.Count
+    Update-CardRailSummaries
+    if ($n -eq 0) { return }
+    if (-not $script:CardRailRich) {
+        # Original compact rail: natural height, 44-DIP slots from the top.
+        for ($i = 0; $i -lt $n; $i++) {
+            $sec = $script:window.FindName([string]$rail[$i] + 'Section')
+            if (-not $sec) { continue }
+            if (-not [double]::IsNaN([double]$sec.Height)) { $sec.Height = [double]::NaN }
+            $want = New-Object System.Windows.Thickness(0, ([double]$i * 44.0), 0, 0)
+            if ($sec.Margin -ne $want) { $sec.Margin = $want }
+            if ($sec.Child -is [System.Windows.FrameworkElement] -and $sec.Child.VerticalAlignment -ne [System.Windows.VerticalAlignment]::Stretch) { $sec.Child.VerticalAlignment = [System.Windows.VerticalAlignment]::Stretch }
+        }
+        return
+    }
+    if ($hero.IsLoaded) { try { $hero.UpdateLayout() } catch { } }
+    $heroH = [double]$hero.ActualHeight
+    if ($heroH -le 0) { return }
+    $gap = [double]$script:CardRailGap
+    $h = [math]::Max(40.0, [math]::Floor((($heroH - $gap * ($n - 1)) / $n) * 2.0) / 2.0)
+    for ($i = 0; $i -lt $n; $i++) {
+        $sec = $script:window.FindName([string]$rail[$i] + 'Section')
+        if (-not $sec) { continue }
+        # Only touch layout properties that actually change.
+        if ([double]::IsNaN([double]$sec.Height) -or [math]::Abs([double]$sec.Height - $h) -gt 0.25) { $sec.Height = $h }
+        $top = $i * ($h + $gap)
+        if ([math]::Abs([double]$sec.Margin.Top - $top) -gt 0.25 -or $sec.Margin.Left -ne 0 -or $sec.Margin.Right -ne 0) {
+            $sec.Margin = New-Object System.Windows.Thickness(0, $top, 0, 0)
+        }
+        if ($sec.Child -is [System.Windows.FrameworkElement] -and $sec.Child.VerticalAlignment -ne [System.Windows.VerticalAlignment]::Center) { $sec.Child.VerticalAlignment = [System.Windows.VerticalAlignment]::Center }
+    }
+    # Heights are final now: show the numbers in the cards that have room.
+    Update-CardRailSummaries
+}
+
 function Step-AccordionCard([int]$Direction) {
-    $keys = [string[]](Get-EnabledProviderKeys)
-    if ($keys.Count -eq 0) { return }
-    $i = [array]::IndexOf($keys, [string]$script:AccordionKey)
-    if ($i -lt 0) { $next = if ($Direction -gt 0) { 0 } else { $keys.Count - 1 } }
-    else { $next = [math]::Max(0, [math]::Min($keys.Count - 1, $i + $Direction)) }
-    if ($next -eq $i) { return }
-    Set-AccordionCard $keys[$next]
+    $rail = @($script:CardRailOrder)
+    if ($rail.Count -eq 0) { return }
+    if ($Direction -gt 0) {
+        # Wheel down: first small card becomes hero, all others move up, and
+        # the previous hero settles into the bottom slot.
+        Switch-AccordionCardAnimated ([string]$rail[0]) 'WheelDown'
+    } else {
+        # Reverse wheel direction performs the exact inverse stack rotation.
+        Switch-AccordionCardAnimated ([string]$rail[$rail.Count - 1]) 'WheelUp'
+    }
 }
 
 function Invoke-CardHeaderClick([string]$Key) {
     if (Test-NotchShell) {
-        if ($script:AccordionKey -eq $Key) { Set-AccordionCard $null } else { Set-AccordionCard $Key }
+        if (-not (Test-CardRailMode)) {
+            Toggle-Section $Key
+            $section = $script:window.FindName($Key + 'Section')
+            $body = $script:window.FindName($Key + 'Body')
+            Set-LegacyCardChrome $Key ([System.Windows.Controls.Grid]::GetRow($section)) ($body -and $body.Visibility -eq [System.Windows.Visibility]::Visible)
+            return
+        }
+        if ($script:AccordionKey -ne $Key) { Switch-AccordionCardAnimated $Key 'Click' }
         return
     }
     Toggle-Section $Key
@@ -1321,12 +2158,21 @@ function Invoke-CardHeaderClick([string]$Key) {
 
 function Invoke-PanelWheel($EventArgs) {
     if (-not (Test-NotchShell) -or $script:NotchState -ne 'EXPANDED') { return }
+    if ((Get-Command Invoke-IslandPageWheel -ErrorAction SilentlyContinue) -and (Invoke-IslandPageWheel $EventArgs)) { return }
+    if (-not (Test-CardRailMode)) { return }
     $EventArgs.Handled = $true
-    # Wheels and touchpads send bursts; one card per gesture step.
-    $now = $script:AccordionWheelClock.Elapsed.TotalMilliseconds
-    if ($now - $script:AccordionWheelAt -lt 230) { return }
-    $script:AccordionWheelAt = $now
-    if ($EventArgs.Delta -lt 0) { Step-AccordionCard 1 } else { Step-AccordionCard -1 }
+    # At most one card switch can be active. Extra wheel events during the
+    # 400 ms transition are consumed, not queued, so there is no trailing roll.
+    if ($script:CardRailAnimating) { return }
+    if ($EventArgs.Delta -lt 0) { Step-AccordionCard 1 }
+    elseif ($EventArgs.Delta -gt 0) { Step-AccordionCard -1 }
+}
+
+function Sync-ProviderCardLayout {
+    if (-not $script:window) { return }
+    $keys = @([string[]](Get-EnabledProviderKeys))
+    if ($keys.Count -eq 0) { return }
+    Set-AccordionCard (Get-PreferredCard) -NoLayout
 }
 
 # ---------------------------------------------------------------------------
@@ -1337,6 +2183,7 @@ function Invoke-PanelWheel($EventArgs) {
 function Get-EnabledProviderKeys {
     $keys = @()
     foreach ($key in @($script:ProviderMeta.Keys)) {
+        if ((Get-Command Test-ProviderAvailable -ErrorAction SilentlyContinue) -and -not (Test-ProviderAvailable $key)) { continue }
         $on = $true
         if (Get-Command Get-SectionVisible -ErrorAction SilentlyContinue) { $on = [bool](Get-SectionVisible $key) }
         if ($on) { $keys += $key }
@@ -1346,16 +2193,27 @@ function Get-EnabledProviderKeys {
 
 function Get-ProviderUsedMetrics([string]$Key) {
     switch ($Key) {
+        'deepseek' {
+            # What is left: the real balance (live or last read), else ¥--.
+            $text = '¥--'
+            $budget = Get-DeepSeekBudget
+            if ($budget) { $text = ('¥{0:0.00}' -f $budget.Remaining) }
+            return @(@{ Label = ''; Value = $null; Text = $text })
+        }
         'claude' {
             $d = if ($script:State) { Get-IslandMember $script:State 'Data' } else { $null }
-            return @(
-                @{ Label = '5h'; Value = (Get-IslandMember (Get-IslandMember $d 'five_hour') 'utilization') },
-                @{ Label = 'W';  Value = (Get-IslandMember (Get-IslandMember $d 'seven_day') 'utilization') })
+            $rows = @()
+            $five = Get-IslandMember (Get-IslandMember $d 'five_hour') 'utilization'
+            if ($null -ne $five) { $rows += @{ Label = '5h'; Value = $five } }
+            $rows += @{ Label = 'W'; Value = (Get-IslandMember (Get-IslandMember $d 'seven_day') 'utilization') }
+            return $rows
         }
         'codex' {
-            return @(
-                @{ Label = '5h'; Value = (Get-IslandMember $script:CodexStats 'FiveHourPct') },
-                @{ Label = 'W';  Value = (Get-IslandMember $script:CodexStats 'WeekPct') })
+            $rows = @()
+            $five = Get-IslandMember $script:CodexStats 'FiveHourPct'
+            if ($null -ne $five) { $rows += @{ Label = '5h'; Value = $five } }
+            $rows += @{ Label = 'W'; Value = (Get-IslandMember $script:CodexStats 'WeekPct') }
+            return $rows
         }
         'cursor' {
             $pct = $null
@@ -1365,7 +2223,13 @@ function Get-ProviderUsedMetrics([string]$Key) {
             return @(@{ Label = 'Mo'; Value = $pct })
         }
         'grok' {
-            return @(@{ Label = 'W'; Value = (Get-IslandMember $script:GrokUsage 'WeekPct') })
+            $week = Get-IslandMember $script:GrokUsage 'WeekPct'
+            if ($null -ne $week) { return @(@{ Label = 'W'; Value = $week }) }
+            $desktop = if (Get-Command Get-GrokBotDesktopStatus -ErrorAction SilentlyContinue) { Get-GrokBotDesktopStatus } else { $null }
+            if ($desktop -and $desktop.Installed -and $desktop.SignedIn) {
+                return @(@{ Label = ''; Value = $null; Text = '已登录' })
+            }
+            return @(@{ Label = ''; Value = $null; Text = '--' })
         }
     }
     return @()
@@ -1403,9 +2267,9 @@ function New-NotchTag([string]$Key) {
         $lbl.Text = $metrics[$i].Label; $lbl.FontSize = 9.5; $lbl.FontFamily = 'Segoe UI'
         $lbl.Foreground = NewBrush '#8E8E93'; $lbl.VerticalAlignment = 'Center'
         $lbl.Margin = New-Object System.Windows.Thickness(0, 1, 4, 0)
-        [void]$row.Children.Add($lbl)
+        if ($lbl.Text) { [void]$row.Children.Add($lbl) }
         $val = New-Object System.Windows.Controls.TextBlock
-        $val.Text = '100%'; $val.FontSize = 12; $val.FontFamily = 'Segoe UI Semibold'
+        $val.Text = '100%'; if ($Key -eq 'deepseek') { $val.MinWidth = 46 }; $val.FontSize = 12; $val.FontFamily = 'Segoe UI Semibold'
         $val.VerticalAlignment = 'Center'
         [void]$row.Children.Add($val)
         $values += $val
@@ -1504,15 +2368,141 @@ function Set-NotchUsedText($Element, $Used) {
 # Builds (when the provider set changed) and measures the tag row; returns the
 # notch width it needs. Value slots are measured at "100%" so numbers ticking
 # never change the width.
+# ---------------------------------------------------------------------------
+# Now playing in the folded notch: a pill with the cover and title, first in
+# the readout, while something plays (Settings > 灵动岛 > 刘海上显示正在播放).
+# ---------------------------------------------------------------------------
+function Test-NotchMusicVisible {
+    if (-not (Get-Command Test-MediaActive -ErrorAction SilentlyContinue)) { return $false }
+    if (-not [bool](Get-IslandOption 'NotchMusic' $true)) { return $false }
+    return [bool](Test-MediaActive)
+}
+
+function New-NotchMusicTag {
+    $xaml = @'
+<Border xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        CornerRadius="10" Background="#17FFFFFF" Padding="3,2,9,2" Margin="3,0" VerticalAlignment="Center">
+  <StackPanel Orientation="Horizontal">
+    <Border Width="17" Height="17" CornerRadius="5" Margin="0,0,6,0" Background="#26FFFFFF" VerticalAlignment="Center">
+      <Grid>
+        <TextBlock x:Name="note" Text="&#xE8D6;" FontFamily="Segoe MDL2 Assets" FontSize="9" Foreground="#C7C7CC"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        <Border CornerRadius="5"><Border.Background><ImageBrush x:Name="art" Stretch="UniformToFill"/></Border.Background></Border>
+      </Grid>
+    </Border>
+    <TextBlock x:Name="title" Width="112" FontSize="11.5" FontFamily="Segoe UI Semibold" Foreground="#F2F2F7"
+               TextTrimming="CharacterEllipsis" VerticalAlignment="Center">
+      <TextBlock.RenderTransform><TranslateTransform x:Name="titleShift" Y="0"/></TextBlock.RenderTransform>
+    </TextBlock>
+  </StackPanel>
+</Border>
+'@
+    $el = [System.Windows.Markup.XamlReader]::Parse($xaml)
+    $tag = @{ Element = $el; Art = $el.FindName('art'); Note = $el.FindName('note'); Title = $el.FindName('title'); Shift = $el.FindName('titleShift'); ArtPath = ''; Line = $null }
+    # Lyric lines are longer than titles: give the pill more room for them.
+    if (Test-NotchLyricsEnabled) { $tag.Title.Width = 176 }
+    return $tag
+}
+
+function Test-NotchLyricsEnabled {
+    if (-not (Get-Command Get-IslandOption -ErrorAction SilentlyContinue)) { return $false }
+    return ([bool](Get-IslandOption 'NotchLyrics' $true) -and [bool](Get-IslandOption 'MusicLyrics' $true))
+}
+
+# Folded notch: the music pill shows the current lyric line (song title when
+# there are no lyrics yet), updated from the music tick. A new line slides up
+# and fades in like on the music page.
+function Update-NotchLyric {
+    $tag = $script:NotchMusicTag
+    if (-not $tag -or $script:NotchState -eq 'EXPANDED') { return }
+    $s = $script:MediaState
+    $text = [string]$s.Title
+    if ((Test-NotchLyricsEnabled) -and $script:LyricsLines -and $script:LyricsLines.Count -gt 0) {
+        $idx = Get-LyricIndex ([double](Get-MediaPosition $s))
+        if ($idx -ge 0) {
+            $l = [string]$script:LyricsLines[$idx].L
+            if ($l) { $text = $l } else { $text = '♪' }
+        }
+    }
+    if ($text -eq $tag.Line) { return }
+    $first = ($null -eq $tag.Line)
+    $tag.Line = $text
+    $tag.Title.Text = $text
+    if ($first -or -not $tag.Shift) { return }
+    $dur = [System.Windows.Duration]([TimeSpan]::FromMilliseconds(320))
+    $slide = New-Object System.Windows.Media.Animation.DoubleAnimation(7.0, 0.0, $dur)
+    if (Get-Command Get-IslandSpringEase -ErrorAction SilentlyContinue) { $slide.EasingFunction = Get-IslandSpringEase }
+    $tag.Shift.BeginAnimation([System.Windows.Media.TranslateTransform]::YProperty, $slide)
+    $fade = New-Object System.Windows.Media.Animation.DoubleAnimation(0.2, 1.0, $dur)
+    $tag.Title.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fade)
+}
+
+# Called by the music page whenever the track or play state changes.
+# -Force (or music starting/stopping) rebuilds the readout so the notch
+# widens/narrows; otherwise just the cover and title are refreshed.
+function Update-NotchMediaBadge([switch]$Force) {
+    $want = Test-NotchMusicVisible
+    $has = [bool]$script:NotchMusicTag
+    if ($Force -or $want -ne $has) {
+        $script:NotchTagSignature = $null
+        try {
+            if ((Get-Command Test-NotchShell -ErrorAction SilentlyContinue) -and (Test-NotchShell)) { Update-NotchStageLayout } else { [void](Update-NotchInfoLayout) }
+        } catch { }
+        if (Get-Command Update-FooterNowPlaying -ErrorAction SilentlyContinue) { Update-FooterNowPlaying }
+        return
+    }
+    if (Get-Command Update-FooterNowPlaying -ErrorAction SilentlyContinue) { Update-FooterNowPlaying }
+    $tag = $script:NotchMusicTag
+    if (-not $tag) { return }
+    $s = $script:MediaState
+    $tag.Line = $null
+    $tag.Title.Text = [string]$s.Title
+    Update-NotchLyric
+    $tag.Element.ToolTip = (@([string]$s.Title, [string]$s.Artist) | Where-Object { $_ }) -join ' - '
+    $tag.Element.Opacity = if ([string]$s.Status -eq 'Playing') { 1.0 } else { 0.6 }
+    $art = [string]$s.Art
+    if ($art -ne $tag.ArtPath) {
+        $tag.ArtPath = $art
+        $img = $null
+        if ($art -and (Test-Path -LiteralPath $art)) {
+            try {
+                $bi = New-Object System.Windows.Media.Imaging.BitmapImage
+                $bi.BeginInit(); $bi.CacheOption = 'OnLoad'; $bi.DecodePixelWidth = 48
+                $bi.UriSource = New-Object System.Uri($art); $bi.EndInit(); $bi.Freeze()
+                $img = $bi
+            } catch { $img = $null }
+        }
+        $tag.Art.ImageSource = $img
+        $tag.Note.Visibility = if ($img) { $script:VisHidden } else { $script:VisVisible }
+    }
+}
+
 function Update-NotchInfoLayout {
     $row = $script:IslandElements['Row']
     if (-not $row) { return [double]$script:NotchStage.NotchW }
     $keys = Get-EnabledProviderKeys
     $pinOn = Test-NotchPinButtonEnabled
-    $sig = ($keys -join ',') + '|pin=' + $pinOn
+    # The live account can add/remove meters after the first asynchronous
+    # refresh (for example Claude's 5-hour window). Include meter labels/counts
+    # in the signature so the notch rebuilds instead of keeping its startup
+    # placeholder shape forever.
+    $metricShape = foreach ($key in $keys) {
+        $ms = @(Get-ProviderUsedMetrics $key)
+        $key + ':' + (($ms | ForEach-Object { [string]$_.Label }) -join ',') + ':' + $ms.Count
+    }
+    $musicOn = Test-NotchMusicVisible
+    $sig = ($keys -join ',') + '|metrics=' + ($metricShape -join ';') + '|pin=' + $pinOn + '|music=' + $musicOn + '|lyr=' + (Test-NotchLyricsEnabled)
     if ($script:NotchTagSignature -ne $sig -or -not $script:NotchTags) {
         $row.Children.Clear()
         $script:NotchTags = [ordered]@{}
+        # Now playing leads the readout while music plays.
+        $script:NotchMusicTag = $null
+        if ($musicOn) {
+            $script:NotchMusicTag = New-NotchMusicTag
+            [void]$row.Children.Add($script:NotchMusicTag.Element)
+            Update-NotchMediaBadge
+        }
         foreach ($key in $keys) {
             $tag = New-NotchTag $key
             [void]$row.Children.Add($tag.Element)
@@ -1548,6 +2538,9 @@ function Update-NotchInfoLayout {
 }
 
 function Update-IslandValues {
+    if (Get-Command Update-CardRailSummaries -ErrorAction SilentlyContinue) { try { Update-CardRailSummaries } catch { } }
+    # New data can change any card's height: re-measure so all heroes stay equal.
+    if (Get-Command Request-CardRailFill -ErrorAction SilentlyContinue) { try { Request-CardRailFill } catch { } }
     if (-not $script:NotchTags) { return }
     if ($script:NotchBackdrop) {
         $script:NotchBackdrop.ToolTip = if ($script:State -and [bool]$script:State.Stale) {
@@ -1563,7 +2556,11 @@ function Update-IslandValues {
         }
         $metrics = @(Get-ProviderUsedMetrics $key)
         for ($i = 0; $i -lt $tag.Values.Count -and $i -lt $metrics.Count; $i++) {
-            Set-NotchUsedText $tag.Values[$i] $metrics[$i].Value
+            if ($metrics[$i].ContainsKey('Text')) {
+                $tag.Values[$i].Text = $metrics[$i].Text
+                $budget = Get-DeepSeekBudget
+                $tag.Values[$i].Foreground = NewBrush $(if ($budget) { Get-UsageBandColor $budget.UsedPct } else { '#636366' })
+            } else { Set-NotchUsedText $tag.Values[$i] $metrics[$i].Value }
         }
     }
 }
@@ -1661,7 +2658,10 @@ function Initialize-IslandView {
     $gear = $w.FindName('footerSettingsButton')
     if ($gear) {
         $gear.Add_MouseLeftButtonDown({ param($s, $e) $e.Handled = $true })
-        $gear.Add_MouseLeftButtonUp({ param($s, $e) Show-ContextMenuAtWpfPointer $e })
+        $gear.Add_MouseLeftButtonUp({
+            param($s, $e)
+            if (Get-Command Invoke-FooterGear -ErrorAction SilentlyContinue) { Invoke-FooterGear $e } else { Show-ContextMenuAtWpfPointer $e }
+        })
     }
     $refreshButton = $w.FindName('chromeRefresh')
     if ($refreshButton) {
@@ -1947,9 +2947,18 @@ using System.Windows.Media;
 public static class AIUsageNotchMath {
     const double K = 7.5;
     static readonly double Norm = 1.0 - (1.0 + K) * Math.Exp(-K);
+    // Nusa's open spring (k=320, c=30 => zeta 0.84, w0 17.9 rad/s) over a
+    // ~0.36 s track: w0*T = 6.44. Lands with a <1% overshoot.
+    const double BZ = 0.838, BW = 6.44;
+    static double Bounce(double p) {
+        double wd = BW * Math.Sqrt(1.0 - BZ * BZ);
+        return 1.0 - Math.Exp(-BZ * BW * p) * (Math.Cos(wd * p) + (BZ * BW / wd) * Math.Sin(wd * p));
+    }
+    static readonly double BounceEnd = Bounce(1.0);
     public static double Ease(string kind, double p) {
         switch (kind) {
             case "spring": return (1.0 - (1.0 + K * p) * Math.Exp(-K * p)) / Norm;
+            case "bounce": return Bounce(p) / BounceEnd;
             case "out": { double q = 1.0 - p; return 1.0 - q * q * q; }
             case "fade": return p * p * (3.0 - 2.0 * p);
             case "inout":
@@ -2053,6 +3062,11 @@ function Get-NotchEase([string]$Kind, [double]$p) {
             $k = $script:NotchSpringK
             return (1.0 - (1.0 + $k * $p) * [math]::Exp(-$k * $p)) / $script:NotchSpringNorm
         }
+        'bounce' {
+            $z = 0.838; $w0 = 6.44; $wd = $w0 * [math]::Sqrt(1.0 - $z * $z)
+            $f = { param($t) 1.0 - [math]::Exp(-$z * $w0 * $t) * ([math]::Cos($wd * $t) + ($z * $w0 / $wd) * [math]::Sin($wd * $t)) }
+            return (& $f $p) / (& $f 1.0)
+        }
         'out'   { $q = 1.0 - $p; return 1.0 - $q * $q * $q }
         'fade'  { return $p * $p * (3.0 - 2.0 * $p) }
         'inout' {
@@ -2062,6 +3076,20 @@ function Get-NotchEase([string]$Kind, [double]$p) {
         }
     }
     return $p
+}
+
+# Snap a DIP value to the monitor's pixel grid. At 125 % scaling a window or
+# offset on a half pixel makes WPF resample the whole surface - every glyph
+# and edge goes soft. Sub-pixel leftovers of a settled spring count as 0.
+function Get-NotchSnap([double]$Value) {
+    if (-not $script:NotchDevScale -or $script:NotchDevScaleAt -lt [DateTime]::UtcNow.AddSeconds(-5)) {
+        $s = 1.0
+        try { $src = [System.Windows.PresentationSource]::FromVisual($script:window); if ($src) { $s = [double]$src.CompositionTarget.TransformToDevice.M11 } } catch { }
+        if ($s -le 0) { $s = 1.0 }
+        $script:NotchDevScale = $s; $script:NotchDevScaleAt = [DateTime]::UtcNow
+    }
+    if ([double]::IsNaN($Value)) { return $Value }
+    return [math]::Round($Value * $script:NotchDevScale) / $script:NotchDevScale
 }
 
 function Invoke-NotchApply {
@@ -2074,7 +3102,8 @@ function Invoke-NotchApply {
     $d = [double]$v.dock
     $shoulder = [double]$v.sh * [math]::Max(0.0, [math]::Min(1.0, ($d - 0.5) * 2.0))
     $top = $sp.FloatRadius * [math]::Max(0.0, [math]::Min(1.0, (0.5 - $d) * 2.0))
-    $grid.Clip = Get-NotchGeometry ([double]$v.w) ([double]$v.h) ([double]$v.rb) $shoulder $top
+    $sq = [double]$script:NotchSquashS
+    $grid.Clip = Get-NotchGeometry ([double]$v.w * (1.0 + 0.035 * $sq)) ([double]$v.h * (1.0 - 0.06 * $sq)) ([double]$v.rb) $shoulder $top
     # A layered window only re-presents dirty regions; a shrinking clip alone
     # was not always counted, leaving old panel pixels on screen. Repainting
     # the full-stage backdrop marks the whole surface dirty.
@@ -2086,8 +3115,8 @@ function Invoke-NotchApply {
         if ($info.Visibility -ne $script:VisHidden) { $info.Visibility = $script:VisHidden }
     } else {
         if ($info.Visibility -ne $script:VisVisible) { $info.Visibility = $script:VisVisible }
-        $info.Opacity = $na
-        if ($script:NotchParts.InfoTranslate) { $script:NotchParts.InfoTranslate.Y = [double]$v.notchDy }
+        $info.Opacity = if ($na -ge 0.995) { 1.0 } else { $na }
+        if ($script:NotchParts.InfoTranslate) { $script:NotchParts.InfoTranslate.Y = Get-NotchSnap ([double]$v.notchDy) }
     }
 
     $parts = $script:NotchParts
@@ -2099,17 +3128,19 @@ function Invoke-NotchApply {
             if ($pinned.Visibility -ne $script:VisHidden) { $pinned.Visibility = $script:VisHidden }
         } else {
             if ($pinned.Visibility -ne $script:VisVisible) { $pinned.Visibility = $script:VisVisible }
+            if ($ha -ge 0.995) { $ha = 1.0 }; if ($ba -ge 0.995) { $ba = 1.0 }
             if ($parts.Header)  { $parts.Header.Opacity = $ha }
-            if ($parts.Scroll)  { $parts.Scroll.Opacity = $ba }
+            if ($parts.Pages)   { $parts.Pages.Opacity = $ba }
+            elseif ($parts.Scroll) { $parts.Scroll.Opacity = $ba }
             if ($parts.Divider) { $parts.Divider.Opacity = $ba }
             if ($parts.Footer)  { $parts.Footer.Opacity = $ba }
-            if ($parts.ContentTranslate) { $parts.ContentTranslate.Y = [double]$v.bodyDy }
+            if ($parts.ContentTranslate) { $parts.ContentTranslate.Y = Get-NotchSnap ([double]$v.bodyDy) }
         }
     }
 
     if ($MoveWindow) {
-        $script:window.Left = [double]$v.winL
-        $script:window.Top = [double]$v.winT
+        $script:window.Left = Get-NotchSnap ([double]$v.winL)
+        $script:window.Top = Get-NotchSnap ([double]$v.winT)
     }
 }
 
@@ -2126,6 +3157,10 @@ function Start-NotchMotion {
         [scriptblock]$OnComplete = $null,
         [switch]$Additive
     )
+    # Settings > 动画 > 速度 (快速 runs every morph 1.35x, like Nusa's fast mode).
+    if (Get-Command Get-NotchSpeedFactor -ErrorAction SilentlyContinue) {
+        $DurationMs = [int][math]::Max(1, [math]::Round($DurationMs / (Get-NotchSpeedFactor)))
+    }
     $now = $script:NotchClock.Elapsed.TotalMilliseconds
     foreach ($name in @($Tracks.Keys)) {
         $spec = @($Tracks[$name])
@@ -2150,6 +3185,15 @@ function Start-NotchMotion {
     if (-not $Additive) {
         $script:NotchTransition = @{ End = $now + $DurationMs; Done = $OnComplete }
     }
+    Start-NotchRendering
+}
+
+# Kick the jelly spring. DelayMs lets it fire as the outline lands rather
+# than at the first frame.
+function Start-NotchSquash([double]$Amp, [double]$DelayMs = 0.0) {
+    if (Get-Command Get-NotchJellyScale -ErrorAction SilentlyContinue) { $Amp *= (Get-NotchJellyScale) }
+    if ($Amp -le 0.001) { return }
+    $script:NotchSquash = @{ Start = $script:NotchClock.Elapsed.TotalMilliseconds + $DelayMs; Amp = $Amp }
     Start-NotchRendering
 }
 
@@ -2208,6 +3252,17 @@ function Invoke-NotchFrame {
                 $script:NV[$name] = $value
             }
         }
+        $sqz = $script:NotchSquash
+        if ($sqz) {
+            $t = ($now - [double]$sqz.Start) / 1000.0
+            if ($t -ge 0.7) {
+                $script:NotchSquash = $null
+                $script:NotchSquashS = 0.0
+            } elseif ($t -gt 0.0) {
+                # Impulse response of k=500, c=18: e^(-9t) sin(20.47t), peak 0.551.
+                $script:NotchSquashS = [double]$sqz.Amp * [math]::Exp(-9.0 * $t) * [math]::Sin(20.47 * $t) / 0.551
+            }
+        }
         Invoke-NotchApply -MoveWindow:$moveWindow
 
         $tx = $script:NotchTransition
@@ -2215,11 +3270,13 @@ function Invoke-NotchFrame {
             $script:NotchTransition = $null
             if ($tx.Done) { & $tx.Done }
         }
-        if ($script:NTracks.Count -eq 0 -and -not $script:NotchTransition) { Stop-NotchRendering }
+        if ($script:NTracks.Count -eq 0 -and -not $script:NotchTransition -and -not $script:NotchSquash) { Stop-NotchRendering }
     } catch {
         Write-NotchLog "frame error: $($_.Exception.Message)"
         $script:NTracks.Clear()
         $script:NotchTransition = $null
+        $script:NotchSquash = $null
+        $script:NotchSquashS = 0.0
         Stop-NotchRendering
     }
 }
@@ -2228,6 +3285,8 @@ function Invoke-NotchFrame {
 function Set-NotchRest {
     $script:NTracks.Clear()
     $script:NotchTransition = $null
+    $script:NotchSquash = $null
+    $script:NotchSquashS = 0.0
     $edge = Get-NotchPreset 'EDGE'
     $script:NV['w'] = $edge.w
     $script:NV['h'] = $edge.h
@@ -2311,9 +3370,19 @@ function Set-NotchContentWidth([double]$Width) {
         }
         $script:NotchWideElements = $found.ToArray()
     }
-    # content - card (12 padding + 1 border) x2 - meters' right margin 14
-    # - stats column 196 - icon column 24
-    $track = [math]::Floor($Width - 26.0 - 14.0 - 196.0 - 24.0)
+    # The meters live in the hero card, which is the content width less the
+    # small-card rail on the right (its column + 10 DIP gap). Inside the card:
+    # padding 12 + border 1 each side (26), the meters' right margin 14, the
+    # icon column 24, and the stats column 196 when it is shown. Before, the
+    # rail was not subtracted and bars ran ~140 DIP past the card's edge.
+    $hero = $Width
+    $hostGrid = $script:window.FindName('sectionStack')
+    if ($hostGrid -and $hostGrid.ColumnDefinitions.Count -ge 2) {
+        $rail = [double]$hostGrid.ColumnDefinitions[1].Width.Value
+        if ($rail -gt 0) { $hero = $Width - $rail - 10.0 }
+    }
+    $stats = if ($script:Cfg -and -not [bool]$script:Cfg.ShowStats) { 0.0 } else { 196.0 }
+    $track = [math]::Max(80.0, [math]::Floor($hero - 26.0 - 14.0 - $stats - 24.0))
     $changed = ([math]::Abs([double]$content.Width - $Width) -gt 0.5) -or ([math]::Abs([double]$script:BarTrackWidth - $track) -gt 0.5)
     $content.Width = $Width
     foreach ($el in $script:NotchWideElements) { $el.Width = $track }
@@ -2347,6 +3416,8 @@ function Suspend-NotchShell {
     Stop-NotchRendering
     $script:NTracks.Clear()
     $script:NotchTransition = $null
+    $script:NotchSquash = $null
+    $script:NotchSquashS = 0.0
     if ($script:NotchHoldTimer) { $script:NotchHoldTimer.Stop() }
     $script:NotchState = 'SUSPENDED'
     if ($script:NotchContentRoot) { $script:NotchContentRoot.Clip = $null }
@@ -2358,7 +3429,7 @@ function Suspend-NotchShell {
         $parts.Pinned.Margin = New-Object System.Windows.Thickness(12)
         $parts.Pinned.Width = 280.0
     }
-    foreach ($k in @('Header','Scroll','Divider','Footer')) {
+    foreach ($k in @('Header','Scroll','Pages','Divider','Footer')) {
         if ($parts[$k]) { $parts[$k].Opacity = 1.0 }
     }
     if ($parts.ContentTranslate) { $parts.ContentTranslate.Y = 0.0 }
@@ -2369,7 +3440,23 @@ function Suspend-NotchShell {
 }
 
 function Get-NotchHomePosition {
-    $wa = [System.Windows.SystemParameters]::WorkArea
+    # The single monitor switch also controls the pinned notch.  WinForms
+    # reports monitor coordinates in device pixels, while WPF positions the
+    # window in device-independent units, so convert through the same scale
+    # helper used by the former drop-down view.
+    if (Get-Command Resolve-DropdownScreen -ErrorAction SilentlyContinue) {
+        $screen = Resolve-DropdownScreen
+        $px = $screen.WorkingArea
+        $scale = if (Get-Command Get-DropdownScaleFactor -ErrorAction SilentlyContinue) { Get-DropdownScaleFactor } else { @{ X = 1.0; Y = 1.0 } }
+        $wa = @{
+            Left = [double]$px.Left * [double]$scale.X
+            Top = [double]$px.Top * [double]$scale.Y
+            Width = [double]$px.Width * [double]$scale.X
+        }
+    } else {
+        $sys = [System.Windows.SystemParameters]::WorkArea
+        $wa = @{ Left = $sys.Left; Top = $sys.Top; Width = $sys.Width }
+    }
     $stageW = [double]$script:NotchStage.StageW
     return @{ Left = [math]::Round($wa.Left + (($wa.Width - $stageW) / 2.0)); Top = $wa.Top }
 }
@@ -2456,7 +3543,7 @@ function Update-NotchStageLayout {
     if ([double]::IsNaN($oldW) -or [math]::Abs($oldW - $stageW) -gt 0.5) {
         $win.Width = $stageW
         if (-not [double]::IsNaN($oldW) -and -not [double]::IsNaN([double]$win.Left)) {
-            $win.Left = [double]$win.Left + ($oldW - $stageW) / 2.0
+            $win.Left = Get-NotchSnap ([double]$win.Left + ($oldW - $stageW) / 2.0)
         }
     }
     Sync-NotchWindowHeight
@@ -2481,8 +3568,8 @@ function Position-IslandWindow {
     Update-NotchStageLayout
     if ($script:NotchState -ne 'EXPANDED' -and $script:NotchState -ne 'EXPANDING') {
         $homePos = Get-NotchHomePosition
-        $script:window.Left = $homePos.Left
-        $script:window.Top = $homePos.Top
+        $script:window.Left = Get-NotchSnap ([double]$homePos.Left)
+        $script:window.Top = Get-NotchSnap ([double]$homePos.Top)
         Set-NotchRest
     }
     $script:Positioned = $true
@@ -2506,9 +3593,9 @@ function Start-NotchHover {
     $n = Get-NotchPreset 'NOTCH'
     # Height leads, the sides follow, corners form on the way; the readout
     # only fades in once the notch has mostly formed.
-    Start-NotchMotion -DurationMs 270 -Tracks @{
-        h       = @($n.h,  0.0,  0.82, 'spring')
-        w       = @($n.w,  0.12, 1.0,  'spring')
+    Start-NotchMotion -DurationMs 280 -Tracks @{
+        h       = @($n.h,  0.0,  0.78, 'spring')
+        w       = @($n.w,  0.12, 1.0,  'bounce')
         rb      = @($n.rb, 0.05, 0.9,  'spring')
         sh      = @($n.sh, 0.0,  0.8,  'spring')
         dock    = @(1.0,   0.0,  1.0,  'out')
@@ -2517,6 +3604,7 @@ function Start-NotchHover {
         headA   = @(0.0,   0.0,  0.3,  'fade')
         bodyA   = @(0.0,   0.0,  0.3,  'fade')
     }
+    Start-NotchSquash 0.6 120
 }
 
 function Start-NotchEdgeReturn {
@@ -2550,11 +3638,10 @@ function Start-NotchExpand {
     if (-not $script:window -or -not (Test-NotchShell)) { return }
     if ($script:NotchState -eq 'EXPANDING' -or $script:NotchState -eq 'EXPANDED') { return }
     if ($script:NotchHoldTimer) { $script:NotchHoldTimer.Stop() }
-    # Open on the first provider's details; the others start folded.
+    # Open on the card picked last time (kept across restarts as LastCard);
+    # the first provider only when there is none or it was switched off.
     try {
-        $cards = [string[]](Get-EnabledProviderKeys)
-        $firstCard = if ($cards.Count -gt 0) { $cards[0] } else { '' }
-        Set-AccordionCard $firstCard -NoLayout
+        Set-AccordionCard (Get-PreferredCard) -NoLayout
     } catch { Write-NotchLog "accordion: $($_.Exception.Message)" }
     Update-NotchStageLayout
     $script:NotchState = 'EXPANDING'
@@ -2565,26 +3652,46 @@ function Start-NotchExpand {
     Sync-IslandMenuItem
     Sync-NotchCollapseButton
     $pn = Get-NotchPreset 'PANEL'
-    # The outline leads. Header joins once the outline is ~2/3 of the way,
-    # the body last, settling with a soft ease-out.
-    Start-NotchMotion -DurationMs 440 -Tracks @{
-        h       = @($pn.h,  0.0,  1.0,  'spring')
-        w       = @($pn.w,  0.0,  0.82, 'spring')
-        rb      = @($pn.rb, 0.0,  0.85, 'spring')
-        sh      = @($pn.sh, 0.0,  0.85, 'spring')
+    # Height drops first, the sides follow a beat later, and both land with a
+    # small under-damped overshoot. Header joins once the outline is ~2/3 of
+    # the way, the body last, settling with a soft ease-out.
+    Start-NotchMotion -DurationMs 380 -Tracks @{
+        h       = @($pn.h,  0.0,  0.86, 'bounce')
+        w       = @($pn.w,  0.1,  1.0,  'bounce')
+        rb      = @($pn.rb, 0.0,  0.8,  'spring')
+        sh      = @($pn.sh, 0.0,  0.8,  'spring')
         dock    = @(1.0,    0.0,  0.5,  'out')
-        notchA  = @(0.0,    0.0,  0.3,  'fade')
-        notchDy = @(3.0,    0.0,  0.3,  'out')
-        headA   = @(1.0,    0.26, 0.58, 'fade')
-        bodyA   = @(1.0,    0.4,  0.86, 'fade')
-        bodyDy  = @(0.0,    0.3,  1.0,  'out')
+        notchA  = @(0.0,    0.0,  0.26, 'fade')
+        notchDy = @(3.0,    0.0,  0.26, 'out')
+        headA   = @(1.0,    0.28, 0.6,  'fade')
+        bodyA   = @(1.0,    0.42, 0.9,  'fade')
+        bodyDy  = @(0.0,    0.32, 1.0,  'out')
     } -OnComplete {
         $script:NotchState = 'EXPANDED'
+        # Expansion itself counts as entering the panel. This makes the first
+        # pointer exit fold it back even when no poll tick landed during entry.
+        $script:NotchPanelSeen = $true
+        $script:NotchPanelLeaveMs = 0.0
         $script:NV['notchDy'] = -3.0
         Sync-NotchCursor
         Sync-IslandMenuItem
         Sync-NotchDock
+        # Once the panel is open and idle, run the card-switch code path once
+        # so its first real use is not the ~100 ms cold start.
+        if (-not $script:CardSwitchWarmed -and $script:window) {
+            $script:CardSwitchWarmed = $true
+            [void]$script:window.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::ApplicationIdle, [Action]{
+                try {
+                    $hero = $script:window.FindName([string]$script:AccordionKey + 'Section')
+                    if ($hero -and $hero.ActualWidth -gt 1) { $null = New-CardSnapshot $hero }
+                    $null = Get-IslandSpringEase
+                    Set-AccordionCard ([string]$script:AccordionKey) -NoLayout
+                } catch { }
+            })
+        }
     }
+    # The jelly wobble starts as the outline lands.
+    Start-NotchSquash 1.0 190
 }
 
 function Start-NotchCollapse {
@@ -2614,7 +3721,7 @@ function Start-NotchCollapse {
         notchA  = @(1.0,   0.7,  1.0,  'fade')
         notchDy = @(0.0,   0.66, 1.0,  'out')
     }
-    $duration = 400
+    $duration = 330
     if ($needsMove) {
         # Travel home while morphing; the top corners square off and the
         # shoulders grow back only as it arrives at the bezel.
@@ -2639,6 +3746,7 @@ function Start-NotchCollapse {
         $script:NotchHoldTimer.Stop()
         $script:NotchHoldTimer.Start()
     }
+    Start-NotchSquash 0.7 160
 }
 
 # Kept for the tray menu and older callers: $true = go to the edge, $false =
@@ -2767,6 +3875,9 @@ function Test-NotchHolding([bool]$InNotch, [bool]$Pressed, [bool]$ButtonsDown, [
 }
 
 function Invoke-NotchHoverPoll {
+    # A card switch or page slide is a few hundred ms inside the open panel;
+    # skip the 35 ms poll meanwhile so the animation has the UI thread.
+    if ($script:CardRailAnimating -or $script:IslandPageSliding) { return }
     $buttonsDown = ([System.Windows.Forms.Control]::MouseButtons -ne [System.Windows.Forms.MouseButtons]::None)
     if ($script:NotchPressed -and -not $buttonsDown) { $script:NotchPressed = $false }
     try {
@@ -2875,7 +3986,7 @@ function Invoke-NotchPanelLeavePoll {
         $script:NotchPanelLeaveMs = 0.0; $script:NotchMenuGraceMs = 700.0; return
     }
     # The colour picker previews on the panel: keep it open meanwhile.
-    if ($script:ColorPicker) { $script:NotchPanelLeaveMs = 0.0; $script:NotchMenuGraceMs = 700.0; return }
+    if ($script:ColorPicker -or $script:AppleSettingsWin) { $script:NotchPanelLeaveMs = 0.0; $script:NotchMenuGraceMs = 700.0; return }
     if ([System.Windows.Forms.Control]::MouseButtons -ne [System.Windows.Forms.MouseButtons]::None) { $script:NotchPanelLeaveMs = 0.0; return }
 
     $pt = Get-NotchCursorLocal
@@ -3027,15 +4138,16 @@ function Wire-UnifiedWindowEvents {
     # Right-click no longer opens the settings menu on the overlay; the footer
     # gear (and the tray icon) do.
 
-    foreach ($pair in @(@('claudeHeader','claude'), @('codexHeader','codex'), @('cursorHeader','cursor'), @('grokHeader','grok'))) {
+    foreach ($pair in @(@('deepseekHeader','deepseek'), @('claudeHeader','claude'), @('codexHeader','codex'), @('cursorHeader','cursor'), @('grokHeader','grok'))) {
         $headerName = $pair[0]
         $sectionKey = $pair[1]
         $header = $script:window.FindName($headerName)
         if ($header) {
-            # Mark mouse-down handled so the window-level DragMove handler does not
-            # start a drag (which would otherwise swallow the header's mouse-up).
-            $header.Add_MouseLeftButtonDown({ param($s, $e) $e.Handled = $true })
-            $header.Add_MouseLeftButtonUp([scriptblock]::Create("Invoke-CardHeaderClick '$sectionKey'"))
+            # Switch on press, not release: the card starts moving the moment
+            # the button goes down (release added a click's length of delay).
+            # Handled so the window-level DragMove handler does not start a drag.
+            $header.Add_MouseLeftButtonDown([scriptblock]::Create("param(`$s, `$e) `$e.Handled = `$true; Invoke-CardHeaderClick '$sectionKey'"))
+            $header.Add_MouseLeftButtonUp({ param($s, $e) $e.Handled = $true })
         }
         # The provider's icon opens its app.
         $tile = $script:window.FindName($sectionKey + 'IconTile')
@@ -3051,6 +4163,11 @@ function Wire-UnifiedWindowEvents {
     # Global hotkeys go here rather than at file scope: this file is loaded before
     # the saved config is, while this runs after it. Re-registering is idempotent.
     if (Get-Command Register-OverlayHotkeys -ErrorAction SilentlyContinue) { Register-OverlayHotkeys }
+
+    # Pages: AI / Music / Shelf / Settings (src\IslandPages.ps1, src\MediaShelf.ps1).
+    if (Get-Command Initialize-IslandPages -ErrorAction SilentlyContinue) {
+        try { Initialize-IslandPages } catch { Write-NotchLog "island pages: $($_.Exception.Message)" }
+    }
 }
 
 
@@ -3088,22 +4205,13 @@ function Get-SettingsMenuOrigin([System.Drawing.Point]$Point) {
         Sync-AppearanceMenus
         Invoke-MenuTranslate $script:ctxStrip.Items
         $empty = [System.Drawing.Size]::Empty
-        $w2 = $script:ctxStrip.GetPreferredSize($empty).Width
-        $w3 = 0; $w4 = 0
-        foreach ($it in @($script:ctxStrip.Items)) {
-            if ($it -isnot [System.Windows.Forms.ToolStripMenuItem] -or -not $it.HasDropDownItems) { continue }
-            $w3 = [math]::Max($w3, $it.DropDown.GetPreferredSize($empty).Width)
-            foreach ($sub in @($it.DropDownItems)) {
-                if ($sub -is [System.Windows.Forms.ToolStripMenuItem] -and $sub.HasDropDownItems) {
-                    $w4 = [math]::Max($w4, $sub.DropDown.GetPreferredSize($empty).Width)
-                }
-            }
-        }
+        $size = $script:ctxStrip.GetPreferredSize($empty)
         $area = [System.Windows.Forms.Screen]::FromPoint($Point).WorkingArea
-        $need = $w2 + $w3 + $w4 + 8
-        $x = $Point.X
-        if ($x + $need -gt $area.Right) { $x = [math]::Max($area.Left, $area.Right - $need) }
-        return (New-Object System.Drawing.Point($x, $Point.Y))
+        # Keep the root menu beside the clicked gear. WinForms flips child menus
+        # at screen edges; reserving three widths here made Settings jump away.
+        $x = [math]::Max($area.Left, [math]::Min($Point.X - 12, $area.Right - $size.Width))
+        $y = [math]::Max($area.Top, [math]::Min($Point.Y, $area.Bottom - $size.Height))
+        return (New-Object System.Drawing.Point([int]$x, [int]$y))
     } catch {
         return $Point
     }
@@ -3125,6 +4233,11 @@ function Quit-App {
     if ($script:pollTimer) { $script:pollTimer.Stop() }
     if ($script:tickTimer) { $script:tickTimer.Stop() }
     if ($script:jobTimer)  { $script:jobTimer.Stop() }
+    if ($script:credentialTimer) { $script:credentialTimer.Stop() }
+    if ($script:deepSeekNoticeTimer) { $script:deepSeekNoticeTimer.Stop() }
+    if ($script:MediaTimer) { $script:MediaTimer.Stop() }
+    if ($script:ClipTimer) { $script:ClipTimer.Stop() }
+    if (Get-Command Stop-MediaHelper -ErrorAction SilentlyContinue) { Stop-MediaHelper }
     if ($script:NotchHoverTimer) { $script:NotchHoverTimer.Stop() }
     if ($script:NotchHoldTimer) { $script:NotchHoldTimer.Stop() }
     if (Get-Command Stop-NotchRendering -ErrorAction SilentlyContinue) { Stop-NotchRendering }
@@ -3213,6 +4326,20 @@ function Sync-ProviderLoginMenuItems {
             continue
         }
         $item.Visible = $true
+        if ($cli -eq 'deepseek') {
+            $installed = Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA 'Programs\DeepSeek Harness\DeepSeek Harness.exe')
+            $item.Text = if ($installed) { 'Open DeepSeek Harness sign-in' } else { 'DeepSeek Harness not installed' }
+            $item.Enabled = $installed
+            continue
+        }
+        if ($cli -eq 'grok') {
+            $desktop = if (Get-Command Get-GrokBotDesktopStatus -ErrorAction SilentlyContinue) { Get-GrokBotDesktopStatus } else { $null }
+            if ($desktop -and $desktop.Installed) {
+                $item.Text = 'Open Grok Bot sign-in'
+                $item.Enabled = $true
+                continue
+            }
+        }
         $resolved = Resolve-ProviderLoginCli $cli
         $item.Text = Get-ProviderLoginMenuCaption -CliName $cli -Resolved $resolved
         $item.Enabled = [bool]$resolved
@@ -3812,7 +4939,7 @@ Add-Separator
 # HUD tiles still keep their links. Labels/URLs vary per vendor on purpose.
 $miPlatforms = New-StripItem 'Platforms' $null
 $script:platformItems = @{}
-$linkGroups = Get-ProviderLinkMenuShape | Group-Object ProviderId
+$linkGroups = Get-ProviderLinkMenuShape | Where-Object { Test-ProviderAvailable $_.ProviderId } | Group-Object ProviderId
 foreach ($group in $linkGroups) {
     $first = @($group.Group)[0]
     $sub = New-StripItem $first.ProviderLabel $null
@@ -3834,7 +4961,7 @@ $miBrand = New-StripItem 'Brand' $null
 [void]$script:ctxStrip.Items.Add($miBrand)
 
 # Version (shown under System)
-$script:DisplayVersion = '0.0.3 beta'
+$script:DisplayVersion = '0.0.4 Beta'
 $script:miUpdate = New-StripItem 'Check for updates' { Invoke-UpdateButton }
 [void]$script:ctxStrip.Items.Add($script:miUpdate)
 $miVersion = New-StripItem ("Version {0}" -f $script:DisplayVersion) $null
@@ -3856,9 +4983,8 @@ $miChooseProviders = New-StripItem 'Choose providers…' {
 }
 [void]$miProviders.DropDownItems.Add($miChooseProviders)
 [void]$miProviders.DropDownItems.Add((New-Object System.Windows.Forms.ToolStripSeparator))
-foreach ($pair in @(@('Claude','claude'), @('Codex','codex'), @('Cursor','cursor'), @('Grok','grok'))) {
-    $label = $pair[0]
-    $key = $pair[1]
+foreach ($key in (Get-AvailableProviderKeys)) {
+    $label = [string]$script:ProviderMeta[$key].Name
     $item = New-StripItem $label ([scriptblock]::Create("`$visible = -not (Get-SectionVisible '$key'); Set-SectionVisible '$key' `$visible; `$script:Cfg.Sections['$key'] = `$visible; Save-UnifiedState; Sync-SectionMenuItems"))
     $item.CheckOnClick = $false
     $item.Checked = Get-SectionVisible $key
@@ -3870,10 +4996,12 @@ foreach ($pair in @(@('Claude','claude'), @('Codex','codex'), @('Cursor','cursor
 # Log in: spawn a visible CLI (`claude login` / `codex login` / `grok login`).
 Add-Separator
 $miLogin = New-StripItem 'Log in' $null
-foreach ($pair in @(@('Claude','claude'), @('Codex','codex'), @('Grok','grok'))) {
-    $provider = $pair[0]
-    $cli = $pair[1]
-    $sub = New-StripItem (Get-ProviderLoginMenuCaption -CliName $cli -Resolved $null) ([scriptblock]::Create("Invoke-ProviderLogin -Provider '$provider' -CliName '$cli'"))
+$deepSeekLogin = New-StripItem 'DeepSeek Harness' { Open-ProviderApp 'deepseek' }
+$script:loginItems['deepseek'] = $deepSeekLogin
+[void]$miLogin.DropDownItems.Add($deepSeekLogin)
+foreach ($cli in @('claude','codex')) {
+    $providerLabel = [string]$script:ProviderMeta[$cli].Name
+    $sub = New-StripItem (Get-ProviderLoginMenuCaption -CliName $cli -Resolved $null) ([scriptblock]::Create("Invoke-ProviderLogin -Provider '$providerLabel' -CliName '$cli'"))
     $script:loginItems[$cli] = $sub
     [void]$miLogin.DropDownItems.Add($sub)
 }
@@ -3881,7 +5009,9 @@ foreach ($pair in @(@('Claude','claude'), @('Codex','codex'), @('Grok','grok')))
 Sync-ProviderLoginMenuItems
 $script:ctxStrip.add_Opening({ Sync-ProviderLoginMenuItems })
 
-# View mode: pinned panel vs Quake-style drop-down on a global hotkey
+# The old View submenu (pinned/Quake/hotkey/focus-loss) is intentionally gone.
+# JayOS now has one clear display choice: stay on the primary monitor, or use
+# the monitor that is active when the panel is positioned.
 $script:viewModeItems = @{}
 function Sync-ViewModeMenuItems {
     $mode = if (Test-DropdownMode) { 'Quake' } else { 'Pinned' }
@@ -3896,62 +5026,19 @@ function Sync-ViewModeMenuItems {
     }
 }
 
-$miView = New-StripItem 'View' $null
-foreach ($pair in @(@('Pinned panel', 'Pinned'), @('Quake terminal (hotkey)', 'Quake'))) {
-    $lbl = $pair[0]; $mode = $pair[1]
-    $sub = New-StripItem $lbl ([scriptblock]::Create(
-        "if ('$mode' -eq 'Quake') { Enter-DropdownMode } else { Exit-DropdownMode }; Save-UnifiedState; Sync-ViewModeMenuItems"))
-    $sub.CheckOnClick = $false
-    $script:viewModeItems[$mode] = $sub
-    [void]$miView.DropDownItems.Add($sub)
-}
-[void]$miView.DropDownItems.Add((New-Object System.Windows.Forms.ToolStripSeparator))
-
-# Hotkey presets. Any combo the parser understands can be set in the state file;
-# these are the ones unlikely to collide with editors or browsers.
 $script:dropdownHotkeyItems = @{}
-$miHotkey = New-StripItem 'Drop-down hotkey' $null
-foreach ($combo in @('Shift+F11', 'Shift+F12', 'Ctrl+Alt+`', 'Ctrl+Alt+U', 'Win+`')) {
-    $c = $combo
-    $sub = New-StripItem $c ([scriptblock]::Create("Set-DropdownHotkey '$c'; Save-UnifiedState; Sync-ViewModeMenuItems"))
-    $sub.CheckOnClick = $false
-    $script:dropdownHotkeyItems[$c] = $sub
-    [void]$miHotkey.DropDownItems.Add($sub)
-}
-[void]$miView.DropDownItems.Add($miHotkey)
-
-# Monitor picker, built from the live screen list so labels show real resolutions.
 $script:dropdownMonitorItems = @{}
-$miMonitor = New-StripItem 'Drop-down monitor' $null
-foreach ($pair in @(@('Primary', 'Primary'), @('Monitor with mouse', 'Active'))) {
-    $lbl = $pair[0]; $val = $pair[1]
-    $sub = New-StripItem $lbl ([scriptblock]::Create("Set-DropdownMonitor '$val'; Save-UnifiedState; Sync-ViewModeMenuItems"))
-    $sub.CheckOnClick = $false
-    $script:dropdownMonitorItems[$val] = $sub
-    [void]$miMonitor.DropDownItems.Add($sub)
-}
-[void]$miMonitor.DropDownItems.Add((New-Object System.Windows.Forms.ToolStripSeparator))
-$screenIndex = 0
-foreach ($scr in (Get-DropdownScreens)) {
-    $screenIndex++
-    $dev = $scr.DeviceName
-    $lbl = '{0}: {1}x{2}{3}' -f $screenIndex, $scr.Bounds.Width, $scr.Bounds.Height, $(if ($scr.Primary) { ' (primary)' } else { '' })
-    $sub = New-StripItem $lbl ([scriptblock]::Create("Set-DropdownMonitor '$dev'; Save-UnifiedState; Sync-ViewModeMenuItems"))
-    $sub.CheckOnClick = $false
-    $script:dropdownMonitorItems[$dev] = $sub
-    [void]$miMonitor.DropDownItems.Add($sub)
-}
-[void]$miView.DropDownItems.Add($miMonitor)
-
-$script:miHideFocus = New-StripItem 'Hide when it loses focus' {
-    $script:Cfg['DropdownHideOnFocusLoss'] = -not [bool]$script:Cfg['DropdownHideOnFocusLoss']
-    $miHideFocus.Checked = [bool]$script:Cfg['DropdownHideOnFocusLoss']
+$script:miHideFocus = $null
+$script:miFollowActiveMonitor = New-StripItem 'Follow active monitor' {
+    $next = if ([string]$script:Cfg['DropdownMonitor'] -eq 'Active') { 'Primary' } else { 'Active' }
+    Set-DropdownMonitor $next
+    $script:miFollowActiveMonitor.Checked = ($next -eq 'Active')
     Save-UnifiedState
+    if (Test-NotchShell) { Position-IslandWindow }
 }
-$miHideFocus.CheckOnClick = $false
-$miHideFocus.Checked = [bool]$script:Cfg['DropdownHideOnFocusLoss']
-[void]$miView.DropDownItems.Add($miHideFocus)
-[void]$script:ctxStrip.Items.Add($miView)
+$script:miFollowActiveMonitor.CheckOnClick = $false
+$script:miFollowActiveMonitor.Checked = ([string]$script:Cfg['DropdownMonitor'] -eq 'Active')
+[void]$script:ctxStrip.Items.Add($script:miFollowActiveMonitor)
 Sync-ViewModeMenuItems
 
 # Global hotkeys for the everyday actions. Both ship unbound, so each submenu
@@ -3994,11 +5081,7 @@ foreach ($spec in @(
     $script:hotkeyMenuItems[$action] = $items
     [void]$miHotkeys.DropDownItems.Add($miAction)
 }
-[void]$script:ctxStrip.Items.Add($miHotkeys)
-Sync-OverlayHotkeyMenuItems
-# The saved config loads after this file, so re-sync the checks on every open.
-$script:ctxStrip.add_Opening({ Sync-OverlayHotkeyMenuItems })
-Add-Separator
+# Global shortcut settings are intentionally omitted from Settings.
 
 # Snap to corner
 $miSnap = New-StripItem 'Snap to corner' $null
@@ -4007,9 +5090,10 @@ foreach ($pair in @(@('Top right','TR'), @('Top left','TL'), @('Bottom right','B
     $sub = New-StripItem $lbl ([scriptblock]::Create("Snap-ToCorner '$key'"))
     [void]$miSnap.DropDownItems.Add($sub)
 }
-[void]$script:ctxStrip.Items.Add($miSnap)
+# Manual corner snapping is intentionally omitted from Settings.
 
-# Opacity
+# Opacity is kept as an internal compatibility value, but is no longer exposed
+# in Settings because it did not provide a useful user-facing control.
 $miOp = New-StripItem 'Opacity' $null
 foreach ($pair in @(@('100%',1.0), @('80%',0.8), @('60%',0.6), @('40%',0.4))) {
     $lbl = $pair[0]; $val = $pair[1]
@@ -4019,7 +5103,6 @@ foreach ($pair in @(@('100%',1.0), @('80%',0.8), @('60%',0.6), @('40%',0.4))) {
     $script:opacityItems[$lbl] = $sub
     [void]$miOp.DropDownItems.Add($sub)
 }
-[void]$script:ctxStrip.Items.Add($miOp)
 
 # Themes are no longer offered in Settings (meters follow usage on every
 # theme); the saved theme still sets the panel colours.
@@ -4035,7 +5118,7 @@ foreach ($pair in $script:PanelBgPresets.GetEnumerator()) {
     [void]$miBg.DropDownItems.Add($sub)
 }
 [void]$miBg.DropDownItems.Add((New-Object System.Windows.Forms.ToolStripSeparator))
-$script:bgCustomItem = New-StripItem 'Custom…' { Invoke-CustomPanelBackground }
+$script:bgCustomItem = New-StripItem 'Custom…' { Invoke-CustomPanelBackgroundDeferred }
 $script:bgCustomItem.CheckOnClick = $false
 [void]$miBg.DropDownItems.Add($script:bgCustomItem)
 [void]$script:ctxStrip.Items.Add($miBg)
@@ -4099,12 +5182,6 @@ $script:miRemaining = New-StripItem 'Show remaining (not used)' {
 $script:miRemaining.Checked = [bool]$script:Cfg.ShowRemaining
 [void]$script:ctxStrip.Items.Add($script:miRemaining)
 
-$script:miDeveloper = New-StripItem 'Developer features (Cursor / Grok beta)' {
-    Set-DeveloperFeatures (-not (Test-DeveloperFeaturesEnabled))
-}
-$script:miDeveloper.Checked = Test-DeveloperFeaturesEnabled
-[void]$script:ctxStrip.Items.Add($script:miDeveloper)
-
 $script:miNotchPin = New-StripItem 'Pin button on notch' {
     Set-NotchPinButton (-not (Test-NotchPinButtonEnabled))
     $script:miNotchPin.Checked = (Test-NotchPinButtonEnabled)
@@ -4135,17 +5212,6 @@ $script:miAiNotifyAttention = New-StripItem 'Notify when the AI needs you' {
 }
 $script:miAiNotifyAttention.Checked = $true
 [void]$script:ctxStrip.Items.Add($script:miAiNotifyAttention)
-
-# Renew an expired Claude sign-in by running Claude Code hidden (one tiny
-# Haiku reply, at most every 30 minutes). Off: an expired sign-in just asks
-# you to sign in again. The setting is a marker file (Data.ps1).
-$script:miClaudeRenew = New-StripItem 'Renew Claude sign-in automatically' {
-    try { Set-ClaudeCliRenewalEnabled (-not (Test-ClaudeCliRenewalEnabled)) } catch { }
-    try { $script:miClaudeRenew.Checked = (Test-ClaudeCliRenewalEnabled) } catch { }
-}
-$script:miClaudeRenew.Checked = $true
-$script:miClaudeRenew.ToolTipText = 'Runs Claude Code in the background with a one-line Haiku prompt when the sign-in has expired (at most every 30 minutes).'
-[void]$script:ctxStrip.Items.Add($script:miClaudeRenew)
 
 # How long an unanswered AI request card waits before it chimes again.
 $script:aiRemindItems = [ordered]@{}
@@ -4183,6 +5249,59 @@ $miSH.Checked = [bool]$script:Cfg.StartHidden
 [void]$script:ctxStrip.Items.Add($miSH)
 [void]$script:ctxStrip.Items.Add((New-StripItem 'Restore default settings' { Invoke-RestoreDefaultSettings }))
 Add-Separator
+
+# Island (灵动岛): pages, music, Shelf and motion. Grouped by the menu
+# layout below; values go through Set-IslandOption (src\IslandPages.ps1).
+$script:IslandMenuToggles = [ordered]@{
+    'Music page'               = @{ Key = 'PageMusic';   Default = $true }
+    'Shelf page'               = @{ Key = 'PageShelf';   Default = $true }
+    'Now playing on the notch' = @{ Key = 'NotchMusic';  Default = $true }
+    'Lyrics on the notch'      = @{ Key = 'NotchLyrics'; Default = $true }
+    'Synced lyrics'            = @{ Key = 'MusicLyrics'; Default = $true }
+    'Clipboard history'        = @{ Key = 'ClipHistory'; Default = $true }
+    'Fast animations'          = @{ Key = 'AnimSpeed';   Default = 'normal'; On = 'fast'; Off = 'normal' }
+}
+$script:IslandMenuItems = @{}
+foreach ($label in @($script:IslandMenuToggles.Keys)) {
+    $it = New-StripItem $label ([scriptblock]::Create("Invoke-IslandMenuToggle '$label'"))
+    $script:IslandMenuItems[$label] = $it
+    [void]$script:ctxStrip.Items.Add($it)
+}
+$script:miJelly = New-StripItem 'Jelly bounce' $null
+$script:JellyItems = [ordered]@{}
+foreach ($pair in @(@('off', 'Off'), @('soft', 'Soft'), @('normal', 'Standard'))) {
+    $sub = New-StripItem $pair[1] ([scriptblock]::Create("Set-IslandOption 'JellyAmount' '$($pair[0])'; Sync-IslandMenuToggles"))
+    $script:JellyItems[$pair[0]] = $sub
+    [void]$script:miJelly.DropDownItems.Add($sub)
+}
+[void]$script:ctxStrip.Items.Add($script:miJelly)
+
+function Invoke-IslandMenuToggle([string]$Label) {
+    $spec = $script:IslandMenuToggles[$Label]
+    if (-not $spec -or -not (Get-Command Set-IslandOption -ErrorAction SilentlyContinue)) { return }
+    $cur = Get-IslandOption $spec.Key $spec.Default
+    if ($spec.ContainsKey('On')) {
+        $next = if ([string]$cur -eq [string]$spec.On) { $spec.Off } else { $spec.On }
+    } else {
+        $next = -not [bool]$cur
+    }
+    Set-IslandOption $spec.Key $next
+    Sync-IslandMenuToggles
+}
+
+function Sync-IslandMenuToggles {
+    if (-not $script:IslandMenuItems -or -not (Get-Command Get-IslandOption -ErrorAction SilentlyContinue)) { return }
+    foreach ($label in @($script:IslandMenuToggles.Keys)) {
+        $spec = $script:IslandMenuToggles[$label]
+        $item = $script:IslandMenuItems[$label]
+        if (-not $item) { continue }
+        $v = Get-IslandOption $spec.Key $spec.Default
+        $item.Checked = if ($spec.ContainsKey('On')) { [string]$v -eq [string]$spec.On } else { [bool]$v }
+        $item.Invalidate()
+    }
+    $jelly = [string](Get-IslandOption 'JellyAmount' 'normal')
+    foreach ($k in @($script:JellyItems.Keys)) { $script:JellyItems[$k].Checked = ($k -eq $jelly) }
+}
 
 # Window
 [void]$script:ctxStrip.Items.Add((New-StripItem 'Minimize to tray' { $script:window.Hide() }))
@@ -4230,6 +5349,8 @@ Add-Separator
     IcoSwatch = 'M3,3 H13 A1,1 0 0 1 14,4 V12 A1,1 0 0 1 13,13 H3 A1,1 0 0 1 2,12 V4 A1,1 0 0 1 3,3 Z M8,3 V13 M8,8 H14'
     IcoPin = 'M9.6,2 L14,6.4 M11.8,4.2 L8.9,7.1 L10.1,10.6 L5.4,5.9 L8.9,7.1 M7.75,8.25 L2.6,13.4'
     IcoGear = 'M10.2,8 A2.2,2.2 0 1 1 5.8,8 A2.2,2.2 0 1 1 10.2,8 Z M8,1.6 V3.3 M8,12.7 V14.4 M1.6,8 H3.3 M12.7,8 H14.4 M3.5,3.5 L4.7,4.7 M11.3,11.3 L12.5,12.5 M3.5,12.5 L4.7,11.3 M11.3,4.7 L12.5,3.5'
+        IcoCheck = 'M2.8,8.2 L6.4,11.7 L13.4,4.4'
+        IcoAttention = 'M8,2 L14.2,13.5 H1.8 Z M8,5.4 V9.1 M8,11.4 V11.6'
     }
     $g = [System.Drawing.Graphics]::FromHwnd([IntPtr]::Zero)
     $script:MenuDpi = [math]::Max(1.0, $g.DpiX / 96.0)
@@ -4311,28 +5432,35 @@ Add-Separator
         if ($it -is [System.Windows.Forms.ToolStripMenuItem]) { $byText[$it.Text] = $it }
     }
     $groups = @(
-        @{ Title = 'Alerts & Status'; Icon = 'IcoBell'; Items = @(
-            @('Notch (hover to peek)', 'IcoEye'), @('Test alert', 'IcoBell'),
-            @('Dismiss current alert', 'IcoBellOff'), @('Copy stats to clipboard', 'IcoCopy')) },
         @{ Title = 'Account & Data'; Icon = 'IcoPerson'; Items = @(
             @('Platforms', 'IcoLayers'), @('Brand', 'IcoTag'),
             @('Providers', 'IcoDatabase'), @('Log in', 'IcoPerson')) },
-        @{ Title = 'Appearance & Layout'; Icon = 'IcoPalette'; Items = @(
-            @('View', 'IcoWindow'), @('Hotkeys', 'IcoKeyboard'), @('Snap to corner', 'IcoCorner'),
-            @('Opacity', 'IcoDrop'), @('Background', 'IcoSwatch'),
-            @('Language', 'IcoGlobe')) },
+        # Background colour takes the former Appearance row directly; it opens
+        # the colour choices without another unnecessary nested level.
+        @{ Title = 'Background'; Icon = 'IcoSwatch'; Direct = 'Background' },
         @{ Title = 'Panels & Features'; Icon = 'IcoSliders'; Toggle = $true; Items = @(
+            @('Follow active monitor', 'IcoWindow'), @('Language', 'IcoGlobe'),
             @('Show stats panel', 'IcoBars'), @('Compact mode', 'IcoList'),
-            @('Show remaining (not used)', 'IcoBars'), @('Developer features (Cursor / Grok beta)', 'IcoGear'),
-            @('Threshold alerts', 'IcoBell'), @('Show history graph', 'IcoTrend'),
-            @('Pin button on notch', 'IcoPin'), @('AI requests in the notch', 'IcoChat'),
-            @('Notify when a task finishes', 'IcoBell'), @('Notify when the AI needs you', 'IcoBell'),
-            @('Remind again if unanswered', 'IcoBell'), @('Renew Claude sign-in automatically', 'IcoPower')) },
+            @('Show remaining (not used)', 'IcoBars'),
+            @('Show history graph', 'IcoTrend'), @('Pin button on notch', 'IcoPin'),
+            @('AI requests in the notch', 'IcoChat')) },
+        # The island's own options (pages, music, Shelf, motion).
+        @{ Title = 'Island'; Icon = 'IcoLayers'; Toggle = $true; Items = @(
+            @('Music page', 'IcoList'), @('Shelf page', 'IcoList'),
+            @('Now playing on the notch', 'IcoEye'), @('Lyrics on the notch', 'IcoChat'), @('Synced lyrics', 'IcoChat'),
+            @('Clipboard history', 'IcoCopy'), @('Fast animations', 'IcoTrend'),
+            @('Jelly bounce', 'IcoSliders')) },
         @{ Title = 'System'; Icon = 'IcoPower'; Items = @(
             @('Open at login', 'IcoPower', $true), @('Start hidden to tray', 'IcoEyeOff', $true),
             @('Restore default settings', 'IcoGear'),
             @('Minimize to tray', 'IcoMinus'), @('Check for updates', 'IcoDownload'),
-            @(("Version {0}" -f $script:DisplayVersion), 'IcoInfo')) }
+            @(("Version {0}" -f $script:DisplayVersion), 'IcoInfo')) },
+        # Keep every alert/notification control at the bottom of Settings.
+        @{ Title = 'Alerts & Status'; Icon = 'IcoBell'; Items = @(
+            @('Notch (hover to peek)', 'IcoEye'), @('Copy stats to clipboard', 'IcoCopy'),
+            @('Test alert', 'IcoBell'), @('Dismiss current alert', 'IcoBellOff'),
+            @('Threshold alerts', 'IcoSliders'), @('Notify when a task finishes', 'IcoCheck', $true),
+            @('Notify when the AI needs you', 'IcoAttention', $true), @('Remind again if unanswered', 'IcoClock')) }
     )
     $used = @{}
     $script:ctxStrip.Items.Clear()
@@ -4353,6 +5481,20 @@ Add-Separator
 
     # Level 2: one row per group; level 3: the group's settings.
     foreach ($grp in $groups) {
+        if ($grp.Direct) {
+            $gi = $byText[[string]$grp.Direct]
+            if (-not $gi) { continue }
+            $gi.Tag = 'group'
+            $gi.Padding = New-Object System.Windows.Forms.Padding(0, 4, 0, 4)
+            try { $gi.Image = New-MenuIcon $iconData[$grp.Icon] } catch { }
+            $gi.DropDown.BackColor = $darkBg
+            $gi.DropDown.ImageScalingSize = $script:ctxStrip.ImageScalingSize
+            $gi.DropDownDirection = [System.Windows.Forms.ToolStripDropDownDirection]::Right
+            [void]$script:MenuDropDowns.Add($gi.DropDown)
+            [void]$script:ctxStrip.Items.Add($gi)
+            $used[[string]$grp.Direct] = $true
+            continue
+        }
         # '&&' shows a literal ampersand (a single '&' marks a mnemonic).
         $gi = New-StripItem ($grp.Title -replace '&', '&&') $null
         $gi.Tag = 'group'
@@ -4373,7 +5515,7 @@ Add-Separator
                 $item.Tag = 'toggle'
                 $item.CheckOnClick = $false
                 # Reserve room on the right for the switch.
-                $item.ShortcutKeyDisplayString = '            '
+                $item.ShortcutKeyDisplayString = '      '
             }
             [void]$gi.DropDownItems.Add($item)
             $used[$spec[0]] = $true
@@ -4418,12 +5560,11 @@ Add-Separator
         'Show stats panel' = 'ShowStats'; 'Compact mode' = 'Compact'; 'Threshold alerts' = 'ShowAlerts'
         'Show history graph' = 'ShowGraph'; 'Start hidden to tray' = 'StartHidden'
         'Show remaining (not used)' = 'ShowRemaining'
-        'Developer features (Cursor / Grok beta)' = 'DeveloperFeatures'
         'Pin button on notch' = 'NotchPinButton'; 'AI requests in the notch' = 'AiRequests'
         'Notify when a task finishes' = 'AiNotifyDone'; 'Notify when the AI needs you' = 'AiNotifyAttention'
     }
     $script:MenuToggleItems = @{}
-    foreach ($k in @($script:MenuToggleKeys.Keys) + @('Open at login', 'Renew Claude sign-in automatically')) {
+    foreach ($k in @($script:MenuToggleKeys.Keys) + @('Open at login', 'Follow active monitor')) {
         if ($byText.ContainsKey($k)) { $script:MenuToggleItems[$k] = $byText[$k] }
     }
 
@@ -4440,7 +5581,7 @@ Add-Separator
             if (-not $isSkip) { $it.Tag = 'option' }
         }
     }
-    foreach ($name in @('View', 'Hotkeys', 'Snap to corner', 'Opacity', 'Theme', 'Background', 'Language', 'Remind again if unanswered')) {
+    foreach ($name in @('View', 'Opacity', 'Theme', 'Background', 'Language', 'Remind again if unanswered')) {
         if ($byText[$name]) { Set-MenuOptionTags $byText[$name].DropDownItems }
     }
 
@@ -4470,10 +5611,10 @@ function Sync-MenuToggleStates {
     if (-not $script:Cfg) { return }
     foreach ($k in @($script:MenuToggleItems.Keys)) {
         $item = $script:MenuToggleItems[$k]
-        if ($k -eq 'Renew Claude sign-in automatically') {
-            try { $item.Checked = [bool](Test-ClaudeCliRenewalEnabled) } catch { }
-        } elseif ($k -eq 'Open at login') {
+        if ($k -eq 'Open at login') {
             if (Get-Command Test-Autostart -ErrorAction SilentlyContinue) { $item.Checked = [bool](Test-Autostart) }
+        } elseif ($k -eq 'Follow active monitor') {
+            $item.Checked = ([string]$script:Cfg['DropdownMonitor'] -eq 'Active')
         } else {
             $item.Checked = [bool]$script:Cfg[$script:MenuToggleKeys[$k]]
         }
@@ -4487,6 +5628,7 @@ function Sync-MenuToggleStates {
     Sync-SectionMenuItems
     Sync-IslandMenuItem
     try { Sync-AiRemindItems } catch { }
+    try { Sync-IslandMenuToggles } catch { }
 }
 $script:ctxStrip.add_Opening({ try { Sync-MenuToggleStates } catch { } })
 $script:ctxStrip.add_Opening({ try { Sync-AppearanceMenus; Invoke-MenuTranslate $script:ctxStrip.Items } catch { } })
@@ -4499,6 +5641,20 @@ using System.Runtime.InteropServices;
 public static class AIUsageDwm {
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr h, int attr, ref int value, int size);
     public static void Round(IntPtr h) { int v = 2; try { DwmSetWindowAttribute(h, 33, ref v, 4); } catch { } }
+    public static void RoundClean(IntPtr h) {
+        Round(h);
+        try {
+            // Suppress the light non-client outline Windows can draw around a
+            // custom opaque region; it otherwise appears as white corner arcs.
+            int noBorder = unchecked((int)0xFFFFFFFE);
+            DwmSetWindowAttribute(h, 34, ref noBorder, 4);
+            // The native DWM shadow can also turn into a pale crescent where
+            // the rounded region meets a light window behind it. The region
+            // supplies the corners, so disable non-client rendering entirely.
+            int ncDisabled = 1;
+            DwmSetWindowAttribute(h, 2, ref ncDisabled, 4);
+        } catch { }
+    }
 }
 '@
 }
@@ -4546,6 +5702,14 @@ function Invoke-AccountAction([string]$Key) {
     if (-not (Test-ProviderAvailable $Key)) { return }
     try {
         $name = $script:ProviderMeta[$Key].Name
+        if ($Key -eq 'deepseek') {
+            Open-ProviderApp 'deepseek'
+            return
+        }
+        if ($Key -eq 'grok') {
+            $desktop = if (Get-Command Get-GrokBotDesktopStatus -ErrorAction SilentlyContinue) { Get-GrokBotDesktopStatus } else { $null }
+            if ($desktop -and $desktop.Installed) { Open-ProviderApp 'grok'; return }
+        }
         if ($Key -eq 'cursor') {
             if (Get-Command Open-ProviderLink -ErrorAction SilentlyContinue) { Open-ProviderLink -Provider 'cursor' -Kind 'Usage' }
             return
@@ -4566,6 +5730,18 @@ function Get-AccountState([string]$Key) {
     $st = $script:LastProviderStatuses
     if ($st -is [System.Collections.IDictionary] -and $st.Contains($Key)) { $raw = $st[$Key] }
     $k = Get-PanelStatusKey $raw
+    if ($Key -eq 'deepseek') {
+        $exe = Join-Path $env:LOCALAPPDATA 'Programs\DeepSeek Harness\DeepSeek Harness.exe'
+        if (Test-Path -LiteralPath $exe) {
+            return @{ Tag = 'acct:ok'; Text = 'Open DeepSeek Harness sign-in'; Tip = 'Open DeepSeek Harness to sign in or change account' }
+        }
+        return @{ Tag = 'acct:missing'; Text = 'Not installed'; Tip = 'DeepSeek Harness is not installed' }
+    }
+    if ($Key -eq 'grok') {
+        $desktop = if (Get-Command Get-GrokBotDesktopStatus -ErrorAction SilentlyContinue) { Get-GrokBotDesktopStatus } else { $null }
+        if ($desktop -and $desktop.SignedIn) { return @{ Tag = 'acct:ok'; Text = 'Signed in'; Tip = 'Open Grok Bot to change account' } }
+        if ($desktop -and $desktop.Installed) { return @{ Tag = 'acct:auth'; Text = 'Sign in'; Tip = 'Open Grok Bot to sign in' } }
+    }
     if ($Key -ne 'cursor' -and -not (Resolve-ProviderLoginCli $Key)) {
         return @{ Tag = 'acct:missing'; Text = 'Not set up'; Tip = 'Not installed - opens the install page' }
     }

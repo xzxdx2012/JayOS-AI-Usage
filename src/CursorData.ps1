@@ -169,6 +169,35 @@ function New-CursorWebSession {
     return $session
 }
 
+# Cursor 2.x may protect its token with Electron safeStorage. Decode the
+# Chromium v10 AES-GCM value with Cursor's own Local State key; older plaintext
+# JWT values pass through unchanged.
+function Unprotect-CursorSafeStorageValue {
+    param([string]$Value)
+    $prefix = 'cursor-safe-storage:v1:'
+    if ([string]::IsNullOrWhiteSpace($Value) -or -not $Value.StartsWith($prefix, [StringComparison]::Ordinal)) { return $Value }
+    try {
+        Add-Type -AssemblyName System.Security -ErrorAction SilentlyContinue
+        $localState = Join-Path $env:APPDATA 'Cursor\Local State'
+        if (-not (Test-Path -LiteralPath $localState)) { return $null }
+        $state = Get-Content -LiteralPath $localState -Raw | ConvertFrom-Json
+        [byte[]]$wrapped = [Convert]::FromBase64String([string]$state.os_crypt.encrypted_key)
+        if ($wrapped.Length -le 5 -or [Text.Encoding]::ASCII.GetString($wrapped, 0, 5) -ne 'DPAPI') { return $null }
+        [byte[]]$master = [Security.Cryptography.ProtectedData]::Unprotect(
+            $wrapped[5..($wrapped.Length - 1)], $null,
+            [Security.Cryptography.DataProtectionScope]::CurrentUser)
+        [byte[]]$blob = [Convert]::FromBase64String($Value.Substring($prefix.Length))
+        if ($blob.Length -lt 32 -or [Text.Encoding]::ASCII.GetString($blob, 0, 3) -ne 'v10') { return $null }
+        [byte[]]$nonce = $blob[3..14]
+        [byte[]]$cipher = $blob[15..($blob.Length - 17)]
+        [byte[]]$tag = $blob[($blob.Length - 16)..($blob.Length - 1)]
+        [byte[]]$plain = New-Object byte[] $cipher.Length
+        $aes = [Security.Cryptography.AesGcm]::new($master, 16)
+        try { $aes.Decrypt($nonce, $cipher, $tag, $plain) } finally { $aes.Dispose() }
+        return [Text.Encoding]::UTF8.GetString($plain)
+    } catch { return $null }
+}
+
 function Get-CursorToken {
     # Read accessToken and email from state.vscdb
     $raw = Invoke-Sqlite $script:StateVscdb "SELECT key, value FROM ItemTable WHERE key IN ('cursorAuth/accessToken','cursorAuth/cachedEmail')"
@@ -185,6 +214,8 @@ function Get-CursorToken {
         if ($row.key -eq 'cursorAuth/accessToken') { $tok   = $row.value -replace '^"|"$','' }
         if ($row.key -eq 'cursorAuth/cachedEmail')  { $email = $row.value -replace '^"|"$','' }
     }
+
+    $tok = Unprotect-CursorSafeStorageValue ([string]$tok)
 
     # Decode JWT payload to extract userId (sub field)
     if ($tok) {

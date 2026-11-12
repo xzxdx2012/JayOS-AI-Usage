@@ -7,6 +7,23 @@ $script:GrokAuthState = 'init'
 $script:GrokErrMsg    = ''
 $script:GrokUsage     = $null
 
+# Grok Bot desktop is a separate signed-in application from grok CLI. Its
+# status is useful for showing the real installed app even when no CLI billing
+# token is present; it is never treated as a fabricated usage percentage.
+function Get-GrokBotDesktopStatus {
+    $exe = Join-Path $env:LOCALAPPDATA 'Programs\Grok Bot\Grok Bot.exe'
+    $statusPath = Join-Path $env:APPDATA 'Grok Bot\desktop-status.json'
+    $result = [ordered]@{ Installed = (Test-Path -LiteralPath $exe); SignedIn = $false; AppVersion = '' }
+    try {
+        if (Test-Path -LiteralPath $statusPath) {
+            $status = Get-Content -LiteralPath $statusPath -Raw | ConvertFrom-Json
+            $result.SignedIn = [bool]$status.signedIn
+            $result.AppVersion = [string]$status.appVersion
+        }
+    } catch { }
+    return [pscustomobject]$result
+}
+
 function Set-GrokAuthState {
     param([string]$State, [string]$Message = '')
 

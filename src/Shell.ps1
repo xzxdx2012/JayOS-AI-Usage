@@ -20,7 +20,8 @@ $xaml = @'
         Title="AI Usage" WindowStyle="None" AllowsTransparency="True"
         Background="Transparent" Topmost="True" ShowInTaskbar="False"
         SizeToContent="Manual" ResizeMode="NoResize"
-        WindowStartupLocation="Manual">
+        WindowStartupLocation="Manual"
+        UseLayoutRounding="True" TextOptions.TextFormattingMode="Display" TextOptions.TextHintingMode="Fixed">
   <Window.Resources>
     <LinearGradientBrush x:Key="Divider" StartPoint="0,0" EndPoint="1,0">
       <GradientStop Color="Transparent" Offset="0"/>
@@ -356,7 +357,60 @@ $xaml = @'
                       VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Disabled"
                       Template="{StaticResource OverlayScrollViewer}">
-        <StackPanel x:Name="sectionStack">
+        <Grid x:Name="sectionStack">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="132"/>
+          </Grid.ColumnDefinitions>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+          <!-- DeepSeek shares the standard card style and accordion names. -->
+          <Border x:Name="deepseekSection" Style="{StaticResource Card}"><StackPanel>          <Border x:Name="deepseekHeader" Background="Transparent" Cursor="Hand" Margin="0,0,0,10">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <Border x:Name="deepseekIconTile" Grid.Column="0" Width="30" Height="30" CornerRadius="8" VerticalAlignment="Center">
+                <Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#6366F1" Offset="0"/><GradientStop Color="#8B5CF6" Offset="1"/></LinearGradientBrush></Border.Background>
+                <Grid>
+                  <TextBlock x:Name="deepseekMonogram" Text="DS" Foreground="#FFFFFF" FontSize="12" FontWeight="Bold" FontFamily="Segoe UI" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                  <Image x:Name="deepseekIconImage" Visibility="Collapsed" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
+                </Grid>
+              </Border>
+              <TextBlock Grid.Column="1" Text="DeepSeek Harness" Foreground="#F5F5F7" FontSize="16.5" FontWeight="Bold" FontFamily="Segoe UI" VerticalAlignment="Center" Margin="10,0,8,1"/>
+              <Border x:Name="deepseekVersionPill" Grid.Column="2" Style="{StaticResource Pill}">
+                <TextBlock x:Name="deepseekVersionText" Text="API · CNY" Foreground="#A1A1A6" FontSize="10.5" FontFamily="Segoe UI" VerticalAlignment="Center"/>
+              </Border>
+              <TextBlock x:Name="deepseekHeaderDetail" Grid.Column="4" Text="" Foreground="#8E8E93" FontSize="11" FontFamily="Segoe UI" VerticalAlignment="Center" Margin="0,0,8,0" Visibility="Collapsed"/>
+              <Border x:Name="deepseekStatusPill" Grid.Column="5" CornerRadius="9" Padding="8,3,10,3" Background="#10FFFFFF" BorderBrush="#22FFFFFF" BorderThickness="1" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal">
+                  <Ellipse x:Name="deepseekStatusDot" Width="7" Height="7" Fill="#636366" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                  <TextBlock x:Name="deepseekStatusText" Text="本地" Foreground="#A1A1A6" FontSize="11.5" FontFamily="Segoe UI" VerticalAlignment="Center"/>
+                </StackPanel>
+              </Border>
+              <TextBlock x:Name="deepseekChevron" Grid.Column="6" Text="&#xE70D;" FontFamily="Segoe MDL2 Assets" FontSize="9" Foreground="#7C7C82" VerticalAlignment="Center" Margin="9,0,0,0"/>
+            </Grid>
+          </Border>
+<StackPanel x:Name="deepseekBody" Visibility="Collapsed">
+<Grid x:Name="deepseekFull" Margin="0,0,0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+<StackPanel Grid.Column="0" Margin="0,0,14,0">
+<Grid><Grid.ColumnDefinitions><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+<Path x:Name="deepseekBudgetIcon" Data="{StaticResource IcoDollar}" Style="{StaticResource RowIcon}"/>
+<TextBlock Grid.Column="1" x:Name="deepseekBudgetLabel" Text="金额消耗" Style="{StaticResource RowLabel}"/>
+<TextBlock Grid.Column="2" x:Name="deepseekBudgetPct" Text="--" Style="{StaticResource RowPct}"/>
+</Grid>
+<Border Tag="track" Height="5" CornerRadius="2.5" Background="#1CFFFFFF" Width="200" HorizontalAlignment="Left" Margin="24,6,0,0"><Border x:Name="deepseekBudgetBar" Height="5" CornerRadius="2.5" HorizontalAlignment="Left" Width="0" Background="#30D158"/></Border>
+<TextBlock x:Name="deepseekTotal" Foreground="#A1A1A6" FontSize="11" FontFamily="Segoe UI" Margin="24,10,0,0"/>
+<TextBlock x:Name="deepseekBalance" Foreground="#F5F5F7" FontSize="13" FontFamily="Segoe UI Semibold" Margin="24,6,0,0"/>
+<TextBlock x:Name="deepseekRemaining" Foreground="#30D158" FontSize="11" FontFamily="Segoe UI" Margin="24,6,0,0"/>
+<TextBlock x:Name="deepseekNote" Text="" Foreground="#7C7C82" FontSize="10" FontFamily="Segoe UI" Margin="24,7,0,0"/>
+</StackPanel>
+<Border x:Name="deepseekStatsPanel" Grid.Column="1" Width="196" BorderBrush="#16FFFFFF" BorderThickness="1,0,0,0" Padding="13,1,0,0"><StackPanel><Grid Margin="0,0,0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="19"/><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Path Grid.Column="0" Data="{StaticResource IcoPerson}" Style="{StaticResource StatIcon}" Stroke="#30D158"/><TextBlock Grid.Column="1" Text="Account" Style="{StaticResource StatLabel}"/><TextBlock Grid.Column="2" Text="未读取" ToolTip="未读取账户身份，不使用其他 AI 的账号代替。" Style="{StaticResource StatValue}" Foreground="#A1A1A6"/></Grid><Grid Margin="0,0,0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="19"/><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Path Grid.Column="0" Data="{StaticResource IcoDollar}" Style="{StaticResource StatIcon}" Stroke="#FFD60A"/><TextBlock Grid.Column="1" Text="已消费" Style="{StaticResource StatLabel}"/><TextBlock Grid.Column="2" x:Name="deepseekStatCost" Text="--" Foreground="#EDEDF0" Style="{StaticResource StatValue}" TextTrimming="CharacterEllipsis"/></Grid><Grid Margin="0,0,0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="19"/><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Path Grid.Column="0" Data="{StaticResource IcoDatabase}" Style="{StaticResource StatIcon}" Stroke="#64D2FF"/><TextBlock Grid.Column="1" Text="Tokens" Style="{StaticResource StatLabel}"/><TextBlock Grid.Column="2" x:Name="deepseekStatTokens" Text="--" Foreground="#EDEDF0" Style="{StaticResource StatValue}" TextTrimming="CharacterEllipsis"/></Grid><Grid Margin="0,0,0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="19"/><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Path Grid.Column="0" Data="{StaticResource IcoBars}" Style="{StaticResource StatIcon}" Stroke="#30D158"/><TextBlock Grid.Column="1" Text="请求数" Style="{StaticResource StatLabel}"/><TextBlock Grid.Column="2" x:Name="deepseekStatRequests" Text="--" Foreground="#EDEDF0" Style="{StaticResource StatValue}" TextTrimming="CharacterEllipsis"/></Grid><Grid Margin="0,0,0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="19"/><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Path Grid.Column="0" Data="{StaticResource IcoChat}" Style="{StaticResource StatIcon}" Stroke="#FF453A"/><TextBlock Grid.Column="1" Text="会话数" Style="{StaticResource StatLabel}"/><TextBlock Grid.Column="2" x:Name="deepseekStatSessions" Text="--" Foreground="#EDEDF0" Style="{StaticResource StatValue}" TextTrimming="CharacterEllipsis"/></Grid><Grid Margin="0,0,0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="19"/><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Path Grid.Column="0" Data="{StaticResource IcoInfo}" Style="{StaticResource StatIcon}" Stroke="#BF5AF2"/><TextBlock Grid.Column="1" Text="模型" Style="{StaticResource StatLabel}"/><TextBlock Grid.Column="2" x:Name="deepseekStatModel" Text="--" Foreground="#EDEDF0" Style="{StaticResource StatValue}" TextTrimming="CharacterEllipsis"/></Grid></StackPanel></Border>
+</Grid><StackPanel x:Name="deepseekCompact" Visibility="Collapsed"><Grid  Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><Path Data="{StaticResource IcoDollar}" Style="{StaticResource RowIcon}" Stroke="#30D158"/><TextBlock x:Name="deepseekCompactText" Grid.Column="1" FontSize="12" Foreground="#A1A1A6"/><TextBlock x:Name="deepseekCompactPct" Grid.Column="2" FontSize="14" FontWeight="Bold" Foreground="#30D158"/></Grid><Border Tag="track" Width="200" Height="5" CornerRadius="2.5" Background="#1CFFFFFF" HorizontalAlignment="Left" Margin="24,0,0,8"><Border x:Name="deepseekBudgetBarC" Width="0" Height="5" CornerRadius="2.5" HorizontalAlignment="Left" Background="#30D158"/></Border></StackPanel><StackPanel x:Name="deepseekHistoryRow" Visibility="Collapsed" Margin="24,2,0,10"><TextBlock x:Name="deepseekHistoryLabel" Text="历史 · 等待采样" Foreground="#8E8E93" FontSize="10" Margin="0,0,0,4"/><Canvas x:Name="deepseekHistoryCanvas" Tag="track" Width="200" Height="32" HorizontalAlignment="Left" ClipToBounds="True"><Polyline x:Name="deepseekHistoryLine" Stroke="#30D158" StrokeThickness="1.5" StrokeLineJoin="Round"/></Canvas></StackPanel></StackPanel></StackPanel></Border>
+
+
         <!-- ============ CLAUDE ============ -->
         <Border x:Name="claudeSection" Style="{StaticResource Card}">
          <StackPanel>
@@ -390,7 +444,7 @@ $xaml = @'
            <Grid x:Name="claudeFull" Margin="0,0,0,4">
              <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
              <StackPanel Grid.Column="0" Margin="0,0,14,0">
-                <StackPanel Margin="0,0,0,9" Visibility="Visible">
+                <StackPanel x:Name="claudeFivehRow" Margin="0,0,0,9" Visibility="Collapsed">
                   <Grid>
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="24"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto" MinWidth="72"/>
@@ -549,7 +603,7 @@ $xaml = @'
              </Border>
            </Grid>
            <StackPanel x:Name="claudeCompact" Visibility="Collapsed">
-            <Grid Margin="0,0,0,8">
+            <Grid x:Name="claudeFivehRowC" Margin="0,0,0,8" Visibility="Collapsed">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="58"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
               </Grid.ColumnDefinitions>
@@ -626,7 +680,7 @@ $xaml = @'
                   <Image x:Name="codexIconImage" Visibility="Collapsed" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
                 </Grid>
               </Border>
-              <TextBlock Grid.Column="1" Text="Codex" Foreground="#F5F5F7" FontSize="16.5" FontWeight="Bold" FontFamily="Segoe UI" VerticalAlignment="Center" Margin="10,0,8,1"/>
+              <TextBlock Grid.Column="1" Text="CodeX" Foreground="#F5F5F7" FontSize="16.5" FontWeight="Bold" FontFamily="Segoe UI" VerticalAlignment="Center" Margin="10,0,8,1"/>
               <Border x:Name="codexVersionPill" Grid.Column="2" Style="{StaticResource Pill}">
                 <TextBlock x:Name="codexVersionText" Text="--" Foreground="#A1A1A6" FontSize="10.5" FontFamily="Segoe UI" VerticalAlignment="Center"/>
               </Border>
@@ -731,7 +785,7 @@ $xaml = @'
                         ToolTip="One-time usage resets you can redeem on the Codex usage page."/>
                 </Grid>
              </StackPanel>
-             <Border Grid.Column="1" Width="196" BorderBrush="#16FFFFFF" BorderThickness="1,0,0,0" Padding="13,1,0,0">
+             <Border x:Name="codexStatsPanel" Grid.Column="1" Width="196" BorderBrush="#16FFFFFF" BorderThickness="1,0,0,0" Padding="13,1,0,0">
                <StackPanel>
                   <Grid Margin="0,0,0,6" Visibility="Visible">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="19"/><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
@@ -879,9 +933,9 @@ $xaml = @'
                   <TextBlock x:Name="onDemandText" Grid.Column="2" Text="--" Foreground="#8E8E93" Style="{StaticResource StatValue}"/>
                 </Grid>
              </StackPanel>
-             <Border Grid.Column="1" Width="196" BorderBrush="#16FFFFFF" BorderThickness="1,0,0,0" Padding="13,1,0,0">
+             <Border x:Name="cursorStatsPanel" Grid.Column="1" Width="196" BorderBrush="#16FFFFFF" BorderThickness="1,0,0,0" Padding="13,1,0,0">
                <StackPanel>
-                  <StackPanel x:Name="cursorAnalyticsBlock" Visibility="Collapsed">
+                  <StackPanel x:Name="cursorAnalyticsBlock" Visibility="Visible">
                   <Grid Margin="0,0,0,6" Visibility="Visible">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="19"/><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                     <Path Grid.Column="0" Data="{StaticResource IcoBolt}" Style="{StaticResource StatIcon}"/>
@@ -952,7 +1006,7 @@ $xaml = @'
                   <Image x:Name="grokIconImage" Visibility="Collapsed" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
                 </Grid>
               </Border>
-              <TextBlock Grid.Column="1" Text="Grok" Foreground="#F5F5F7" FontSize="16.5" FontWeight="Bold" FontFamily="Segoe UI" VerticalAlignment="Center" Margin="10,0,8,1"/>
+              <TextBlock Grid.Column="1" Text="Grok Bot" Foreground="#F5F5F7" FontSize="16.5" FontWeight="Bold" FontFamily="Segoe UI" VerticalAlignment="Center" Margin="10,0,8,1"/>
               <Border x:Name="grokVersionPill" Grid.Column="2" Style="{StaticResource Pill}">
                 <TextBlock x:Name="grokVersionText" Text="--" Foreground="#A1A1A6" FontSize="10.5" FontFamily="Segoe UI" VerticalAlignment="Center"/>
               </Border>
@@ -1049,7 +1103,7 @@ $xaml = @'
           </StackPanel>
          </StackPanel>
         </Border>
-        </StackPanel>
+        </Grid>
         </ScrollViewer>
 
         <Border x:Name="footerDivider" Height="1" Background="#16FFFFFF" Margin="0,0,0,9"/>
@@ -1483,7 +1537,7 @@ function Update-FooterVersion {
     if (-not $script:window) { return }
     $el = $script:window.FindName('versionLabel')
     if (-not $el) { return }
-    $el.Text = if ($script:DisplayVersion) { [string]$script:DisplayVersion } else { '0.0.3 beta' }
+    $el.Text = if ($script:DisplayVersion) { [string]$script:DisplayVersion } else { '0.0.4 Beta' }
     $fg = '#7C7C82'
     if ($script:Cfg -and $script:Themes) {
         $t = $script:Themes[[string]$script:Cfg.Theme]
@@ -1618,6 +1672,7 @@ function Set-SectionVisible([string]$key, [bool]$visible) {
     $section = $script:window.FindName($key + 'Section')
     if (-not $section) { return }
     $section.Visibility = if ($visible) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+    if (Get-Command Sync-ProviderCardLayout -ErrorAction SilentlyContinue) { Sync-ProviderCardLayout }
     Resize-ToContent
 }
 
@@ -1839,16 +1894,31 @@ function Update-ClaudeSection {
 
     $hasAlert = [bool](Get-Command Check-Alert -ErrorAction SilentlyContinue)
 
-    $hd = $script:window.FindName('claudeHeaderDetail')
-    if ($hd) {
-        if ($resetOverride) { $hd.Text = $resetOverride } else { $hd.Text = Format-Reset $d.five_hour.resets_at }
+    # The live quota response, rather than a configured plan label, decides
+    # whether this account has a 5-hour window.
+    $hasFiveHour = ($d.five_hour -and $null -ne $d.five_hour.utilization)
+    $fivehVis = if ($hasFiveHour) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+    foreach ($n in @('claudeFivehRow','claudeFivehRowC')) {
+        $el = $script:window.FindName($n); if ($el) { $el.Visibility = $fivehVis }
     }
 
-    Set-SectionBar 'fivehBar' 'fivehPct' 'fivehSub' 'fivehReset' $d.five_hour.utilization $d.five_hour.resets_at -AccentFg $script:AccentFiveh -ResetOverride $resetOverride
-    Set-CompactBar 'fivehBarC' 'fivehPctC' $d.five_hour.utilization -AccentFg $script:AccentFiveh
-    Set-Spark 'fivehSpark' 'fivehSparkCanvas' 'five_hour' 'fivehSparkRow'
-    Set-Spark 'fivehSparkC' 'fivehSparkCanvasC' 'five_hour' 'fivehSparkRowC'
-    if ($hasAlert -and -not $stale) { Check-Alert 'five_hour' $d.five_hour.utilization }
+    $hd = $script:window.FindName('claudeHeaderDetail')
+    if ($hd) {
+        $headerReset = if ($hasFiveHour) { $d.five_hour.resets_at } else { $d.seven_day.resets_at }
+        if ($resetOverride) { $hd.Text = $resetOverride } else { $hd.Text = Format-Reset $headerReset }
+    }
+
+    if ($hasFiveHour) {
+        Set-SectionBar 'fivehBar' 'fivehPct' 'fivehSub' 'fivehReset' $d.five_hour.utilization $d.five_hour.resets_at -AccentFg $script:AccentFiveh -ResetOverride $resetOverride
+        Set-CompactBar 'fivehBarC' 'fivehPctC' $d.five_hour.utilization -AccentFg $script:AccentFiveh
+        Set-Spark 'fivehSpark' 'fivehSparkCanvas' 'five_hour' 'fivehSparkRow'
+        Set-Spark 'fivehSparkC' 'fivehSparkCanvasC' 'five_hour' 'fivehSparkRowC'
+        if ($hasAlert -and -not $stale) { Check-Alert 'five_hour' $d.five_hour.utilization }
+    } else {
+        foreach ($n in @('fivehSparkRow','fivehSparkRowC')) {
+            $el = $script:window.FindName($n); if ($el) { $el.Visibility = [System.Windows.Visibility]::Collapsed }
+        }
+    }
 
     Set-SectionBar 'weekBar' 'weekPct' 'weekSub' 'weekReset' $d.seven_day.utilization $d.seven_day.resets_at -AccentFg $script:AccentWeek -ResetOverride $resetOverride
     Set-CompactBar 'weekBarC' 'weekPctC' $d.seven_day.utilization -AccentFg $script:AccentWeek
@@ -2192,7 +2262,9 @@ function Update-GrokResetDisplay {
     $label = $script:window.FindName('grokResetsText')
     if (-not $label) { return }
     $usage = $script:GrokUsage
-    $label.Text = '--'
+    $desktop = if (Get-Command Get-GrokBotDesktopStatus -ErrorAction SilentlyContinue) { Get-GrokBotDesktopStatus } else { $null }
+    $desktopReady = ($desktop -and $desktop.Installed -and $desktop.SignedIn)
+    $label.Text = if ($desktopReady -and -not $script:GrokUsage) { '应用未提供' } else { '--' }
     $label.ToolTip = 'One-time usage reset availability could not be verified.'
     if ($script:GrokAuthState -ne 'ok' -or -not $usage -or $usage.ResetStatus -ne 'ok' -or $null -eq $usage.ResetsAvailable) { return }
     $label.Text = ('{0} available' -f $usage.ResetsAvailable)
@@ -2210,7 +2282,18 @@ function Update-GrokResetDisplay {
 
 function Update-GrokSection {
     Update-GrokResetDisplay
-    Set-SectionAuthError 'grokErrText' $script:GrokAuthState $script:GrokErrMsg -CliName 'grok' | Out-Null
+    $desktop = if (Get-Command Get-GrokBotDesktopStatus -ErrorAction SilentlyContinue) { Get-GrokBotDesktopStatus } else { $null }
+    $desktopReady = ($desktop -and $desktop.Installed -and $desktop.SignedIn)
+    if ($desktopReady) {
+        # Desktop Grok Bot is the configured provider even when the separate
+        # `grok` CLI is not installed.  Do not let the CLI resolver overwrite a
+        # valid desktop sign-in with "Not set up".
+        Set-SectionAuthError 'grokErrText' 'ok' '' | Out-Null
+        $version = $script:window.FindName('grokVersionText')
+        if ($version -and $desktop.AppVersion) { $version.Text = [string]$desktop.AppVersion }
+    } else {
+        Set-SectionAuthError 'grokErrText' $script:GrokAuthState $script:GrokErrMsg -CliName 'grok' | Out-Null
+    }
 
     $s = $script:GrokUsage
     if (-not $s) {
@@ -2218,9 +2301,18 @@ function Update-GrokSection {
         Set-CompactBar 'grokWeekBarC' 'grokWeekPctC' $null -AccentFg $script:AccentGrok
         Set-Spark 'grokWeekSpark' 'grokWeekSparkCanvas' 'grok_seven_day' 'grokWeekSparkRow'
         Set-Spark 'grokWeekSparkC' 'grokWeekSparkCanvasC' 'grok_seven_day' 'grokWeekSparkRowC'
-        $pt = $script:window.FindName('grokPlanText'); if ($pt) { Set-GrokProductUsageVisual $pt '--' $script:AccentGrok }
-        $pp = $script:window.FindName('grokPrepaidText'); if ($pp) { $pp.Text = '--' }
-        $hd = $script:window.FindName('grokHeaderDetail'); if ($hd) { $hd.Text = '' }
+        $pt = $script:window.FindName('grokPlanText')
+        if ($pt) {
+            $desktopText = if ($desktopReady) { '桌面端已登录 · ' + [string]$desktop.AppVersion } else { '--' }
+            Set-GrokProductUsageVisual $pt $desktopText $script:AccentGrok
+        }
+        $pp = $script:window.FindName('grokPrepaidText'); if ($pp) { $pp.Text = if ($desktopReady) { '应用未提供' } else { '--' } }
+        if ($desktopReady) {
+            $pct = $script:window.FindName('grokWeekPct'); if ($pct) { $pct.Text = '未接入' }
+            $pctC = $script:window.FindName('grokWeekPctC'); if ($pctC) { $pctC.Text = '未接入' }
+            $sub = $script:window.FindName('grokWeekSub'); if ($sub) { $sub.Text = 'Grok Bot 桌面端未公开用量数据'; $sub.Visibility = 'Visible' }
+        }
+        $hd = $script:window.FindName('grokHeaderDetail'); if ($hd) { $hd.Text = if ($desktopReady) { '桌面端已登录' } else { '' } }
         return
     }
     $weekPct = Get-OverlayStatNote $s 'WeekPct'
@@ -2370,7 +2462,12 @@ function Update-CursorSection {
         }
         $cs = $script:window.FindName('cursorSessText'); if ($cs) { $cs.Text = ('{0} lines' -f (Fmt-Num $l.linesAccepted)) }
     } else {
-        if ($analytics) { $analytics.Visibility = [System.Windows.Visibility]::Collapsed }
+        # Keep the column (same shape as Codex) and show placeholders, so the
+        # card never loses its right-hand stats; the status pill says why.
+        if ($analytics) { $analytics.Visibility = [System.Windows.Visibility]::Visible }
+        foreach ($n in @('editsText', 'cursorTodayText', 'cursorModelText', 'cursorSessText')) {
+            $tb = $script:window.FindName($n); if ($tb) { $tb.Text = '--' }
+        }
     }
 
     # Compact header detail: on-demand cost takes over (amber) the moment Cursor
@@ -2415,6 +2512,7 @@ function Test-ClaudeSectionVisible {
 }
 
 function Update-AllSections {
+    if (Get-Command Update-DeepSeekPanel -ErrorAction SilentlyContinue) { Update-DeepSeekPanel }
     $dot  = $script:window.FindName('statusDot')
     $time = $script:window.FindName('timeText')
     $status = if ($script:State) { $script:State.Status } else { 'init' }
@@ -2423,6 +2521,18 @@ function Update-AllSections {
         codex  = $script:CodexAuthState
         cursor = $script:AuthState
         grok   = $script:GrokAuthState
+    }
+    # Grok Bot desktop and grok CLI use separate credentials.  A signed-in
+    # desktop app must not be painted as "Sign in" merely because the optional
+    # CLI billing token is absent.  Keep the status honest: signed in/idle until
+    # the desktop commerce bridge returns a real usage value.
+    if (Get-Command Get-GrokBotDesktopStatus -ErrorAction SilentlyContinue) {
+        try {
+            $grokDesktop = Get-GrokBotDesktopStatus
+            if ($grokDesktop -and $grokDesktop.Installed -and $grokDesktop.SignedIn -and -not $script:GrokUsage) {
+                $statuses.grok = 'idle'
+            }
+        } catch { }
     }
     # After Refresh, a card whose refresh is still running reads "Syncing",
     # like Claude's (Cursor's data arrives with the Claude usage job).
@@ -2471,7 +2581,12 @@ function Update-AllSections {
     if ($script:notify -and $script:State -and $script:State.Data) {
         $cd = $script:State.Data
         $identity = if ($script:ClaudeIdentity -and $script:ClaudeIdentity.Email) { [string]$script:ClaudeIdentity.Email } else { 'Claude' }
-        $text = ('AI  {0}  5h {1:0}%  Wk {2:0}%' -f $identity, [double]$cd.five_hour.utilization, [double]$cd.seven_day.utilization)
+        $hasFiveHour = ($cd.five_hour -and $null -ne $cd.five_hour.utilization)
+        $text = if ($hasFiveHour) {
+            ('AI  {0}  5h {1:0}%  Wk {2:0}%' -f $identity, [double]$cd.five_hour.utilization, [double]$cd.seven_day.utilization)
+        } else {
+            ('AI  {0}  Wk {1:0}%' -f $identity, [double]$cd.seven_day.utilization)
+        }
         if ($text.Length -gt 63) { $text = $text.Substring(0, 60) + '...' }
         $script:notify.Text = $text
     }

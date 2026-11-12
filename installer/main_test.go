@@ -42,7 +42,7 @@ func TestPayloadAndExtraction(t *testing.T) {
 	if !bytes.Contains(source, []byte("Sync-NotchWindowHeight -ForMotion")) {
 		t.Fatal("payload does not contain screenshot fix")
 	}
-	for _, feature := range []string{"Developer features (Cursor / Grok beta)", "Restore default settings"} {
+	for _, feature := range []string{"Developer features (Cursor / Grok Bot beta)", "Restore default settings"} {
 		if !bytes.Contains(source, []byte(feature)) {
 			t.Fatalf("missing release feature: %s", feature)
 		}

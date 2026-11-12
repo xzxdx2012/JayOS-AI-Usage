@@ -591,6 +591,37 @@ function Estimate-CodexCost([string]$model, $v) {
            ($outputTokens        / 1000000 * [decimal]$p.out)
 }
 
+# True when a logged window's reset time (epoch seconds) is already past.
+# Windows with no reset time are kept: there is nothing to judge them by.
+function Test-CodexWindowExpired($ResetsAt, [datetime]$Now) {
+    if ($null -eq $ResetsAt) { return $false }
+    try {
+        $at = [DateTimeOffset]::FromUnixTimeSeconds([int64][double]$ResetsAt).LocalDateTime
+        return ($at -le $Now)
+    } catch { return $false }
+}
+
+# The plan the signed-in ChatGPT account has right now, read from the local
+# Codex access token's claims (no request). $null when it cannot be read.
+function Get-CodexAuthPlanType([string]$AuthPath) {
+    $path = if ($AuthPath) { $AuthPath } elseif ($env:CODEX_HOME) { Join-Path $env:CODEX_HOME 'auth.json' } else { Join-Path $env:USERPROFILE '.codex\auth.json' }
+    try {
+        $auth = Get-Content -LiteralPath $path -Raw -ErrorAction Stop | ConvertFrom-Json
+        $plan = $null
+        foreach ($jwt in @($auth.tokens.access_token, $auth.tokens.id_token)) {
+            if (-not $jwt) { continue }
+            $parts = ([string]$jwt).Split('.')
+            if ($parts.Count -lt 2) { continue }
+            $p = $parts[1].Replace('-', '+').Replace('_', '/')
+            $p += '=' * ((4 - $p.Length % 4) % 4)
+            $claims = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($p)) | ConvertFrom-Json
+            $plan = $claims.'https://api.openai.com/auth'.chatgpt_plan_type
+            if ($plan) { return [string]$plan }
+        }
+    } catch { }
+    return $null
+}
+
 function Measure-CodexStats([object[]]$records, [datetime]$today, $rateLimits = $null) {
     $val = [decimal]0; $tin = 0L; $tout = 0L
     $sessions = [System.Collections.Generic.HashSet[string]]::new()
@@ -664,11 +695,14 @@ function Measure-CodexStats([object[]]$records, [datetime]$today, $rateLimits = 
             $weekly   = $rateLimits.secondary
         }
 
-        if ($fiveHour) {
+        # A window logged by a past session whose reset time has already gone
+        # by says nothing about the current window (and may belong to a plan the
+        # account has since left), so drop it instead of showing it as live.
+        if ($fiveHour -and -not (Test-CodexWindowExpired $fiveHour.resets_at $today)) {
             if ($null -ne $fiveHour.used_percent) { $fiveHourPct = [double]$fiveHour.used_percent }
             if ($null -ne $fiveHour.resets_at)    { $fiveHourResetsAt = Convert-CodexEpochSeconds $fiveHour.resets_at }
         }
-        if ($weekly) {
+        if ($weekly -and -not (Test-CodexWindowExpired $weekly.resets_at $today)) {
             if ($null -ne $weekly.used_percent) { $weekPct = [double]$weekly.used_percent }
             if ($null -ne $weekly.resets_at)    { $weekResetsAt = Convert-CodexEpochSeconds $weekly.resets_at }
         }
@@ -689,7 +723,7 @@ function Measure-CodexStats([object[]]$records, [datetime]$today, $rateLimits = 
         WeekPct          = $weekPct
         WeekResetsAt     = $weekResetsAt
         ResetsAvailable  = $null
-        PlanType         = $null
+        PlanType         = $(if ($rateLimits -and $rateLimits.plan_type) { [string]$rateLimits.plan_type } else { $null })
         Credits          = $(if ($rateLimits) { ConvertFrom-CodexCredits $rateLimits.credits } else { $null })
         Model            = $currentModel
         LastComputed     = (Get-Date -Format 'yyyy-MM-dd HH:mm')
@@ -1052,6 +1086,21 @@ function Get-CodexStats {
         Write-CodexLog "Get-CodexStats: live usage merge failed - $($_.Exception.Message)"
     }
 
+    # Live usage failed: the limits now come from the newest session log. After
+    # a plan change (e.g. Plus -> Pro) that log can still describe the old plan,
+    # whose windows (a 5-hour limit the new plan does not have, or the old
+    # percentages) would come back on screen. When the log's plan differs from
+    # the plan on the current sign-in, drop those windows rather than show them.
+    if (-not $liveOk -and $script:CodexStats) {
+        $authPlan = Get-CodexAuthPlanType
+        $logPlan = [string]$script:CodexStats.PlanType
+        if ($authPlan -and $logPlan -and ($authPlan -ne $logPlan)) {
+            Write-CodexLog "Get-CodexStats: session-log limits are for plan '$logPlan' but the sign-in is '$authPlan'; hiding them until live usage loads"
+            foreach ($k in @('FiveHourPct', 'FiveHourResetsAt', 'WeekPct', 'WeekResetsAt')) { $script:CodexStats[$k] = $null }
+        }
+        if ($authPlan) { $script:CodexStats.PlanType = $authPlan }
+    }
+
     if ($stopped) {
         if (-not $script:CodexStats) { $script:CodexStats = Measure-CodexStats @() (Get-Date) }
         $script:CodexStats.CatchingUp = $true
@@ -1070,7 +1119,9 @@ function Merge-CodexStatsResult($Previous, $Next) {
     if (-not $Previous -or $Previous.CatchingUp) { return $Next }
     $merged = @{}
     foreach ($k in @($Previous.Keys)) { $merged[$k] = $Previous[$k] }
-    if ($Next.LiveOk) {
+    # A plan change also invalidates the previous limits, live or not.
+    $planChanged = ($Next.PlanType -and $Previous.PlanType -and ([string]$Next.PlanType -ne [string]$Previous.PlanType))
+    if ($Next.LiveOk -or $planChanged) {
         foreach ($k in $script:CodexLiveStatKeys) {
             if (($k -eq 'PlanType' -or $k -eq 'Credits') -and $null -eq $Next[$k]) { continue }
             $merged[$k] = $Next[$k]

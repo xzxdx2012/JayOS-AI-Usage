@@ -22,3 +22,17 @@ PROJECT-LOG.md
 
 # Test fixtures left behind by an aborted run
 tests/fixture-*/
+
+# Per-user data of the music, DeepSeek and self-check features
+media/
+debug-snapshots/
+snapshot.request
+lib/cache/
+backups/
+deepseek-budget.json
+deepseek-history.json
+deepseek-notice-cursor.json
+deepseek-api-key.txt
+deepseek-harness-token.txt
+*.tmp
+__pycache__/

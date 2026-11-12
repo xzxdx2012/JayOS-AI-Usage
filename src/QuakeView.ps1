@@ -142,7 +142,9 @@ function Render-QuakeClaude($tb) {
         Add-QuakeRun $tb ('  ' + $msg) $script:QuakeCol.Dim
         Add-QuakeBreak $tb
     } else {
-        Add-QuakeGaugeLine $tb '5-HOUR' $d.five_hour.utilization $d.five_hour.resets_at
+        if ($d.five_hour -and $null -ne $d.five_hour.utilization) {
+            Add-QuakeGaugeLine $tb '5-HOUR' $d.five_hour.utilization $d.five_hour.resets_at
+        }
         Add-QuakeGaugeLine $tb 'WEEKLY' $d.seven_day.utilization $d.seven_day.resets_at
         # Extra weekly windows only exist on some plans; show the ones we got.
         foreach ($spec in (Get-ClaudeQuotaExportWindowSpecs)) {
@@ -176,7 +178,9 @@ function Render-QuakeCodex($tb) {
         Add-QuakeBreak $tb
         return
     }
-    Add-QuakeGaugeLine $tb '5-HOUR' $s.FiveHourPct $s.FiveHourResetsAt
+    if ($null -ne $s.FiveHourPct) {
+        Add-QuakeGaugeLine $tb '5-HOUR' $s.FiveHourPct $s.FiveHourResetsAt
+    }
     Add-QuakeGaugeLine $tb 'WEEKLY' $s.WeekPct $s.WeekResetsAt
     Add-QuakeStatLine $tb 'tokens' ('{0} in / {1} out' -f (Format-QuakeNum ([double]$s.InTokens)), (Format-QuakeNum ([double]$s.OutTokens)))
     Add-QuakeStatLine $tb 'today' ('{0} tok  {1} msgs' -f (Format-QuakeNum ([double]$s.TodayTok)), [int]$s.TodayMsg)
@@ -188,7 +192,7 @@ function Render-QuakeGrok($tb) {
     $tb.Inlines.Clear()
     $s = $script:GrokUsage
     $suffix = if ($s -and $s.PlanType) { [string]$s.PlanType } else { '' }
-    Add-QuakeSectionTitle $tb 'GROK' $suffix
+    Add-QuakeSectionTitle $tb 'GROK BOT' $suffix
     $gw = Get-QuakeGaugeWidth
 
     if ($script:GrokAuthState -eq 'auth' -or $script:GrokAuthState -eq 'notoken') {

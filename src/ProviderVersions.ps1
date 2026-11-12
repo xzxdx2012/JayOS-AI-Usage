@@ -273,7 +273,13 @@ function Update-ProviderVersionLabels {
         @{ El = 'claudeVersionText'; Provider = 'claude'; Show = $claudeShown; Get = { Get-ProviderCliVersionCached 'claude' } }
         @{ El = 'codexVersionText';  Provider = 'codex';  Show = $true;       Get = { Get-ProviderCliVersionCached 'codex' } }
         @{ El = 'cursorVersionText'; Provider = 'cursor'; Show = $true;       Get = { Get-CursorAppVersionCached } }
-        @{ El = 'grokVersionText';   Provider = 'grok';   Show = $true;       Get = { Get-ProviderCliVersionCached 'grok' } }
+        @{ El = 'grokVersionText';   Provider = 'grok';   Show = $true;       Get = {
+            if (Get-Command Get-GrokBotDesktopStatus -ErrorAction SilentlyContinue) {
+                $desktop = Get-GrokBotDesktopStatus
+                if ($desktop -and $desktop.Installed -and $desktop.AppVersion) { return [string]$desktop.AppVersion }
+            }
+            Get-ProviderCliVersionCached 'grok'
+        } }
     )
 
     foreach ($spec in $specs) {

@@ -13,7 +13,7 @@ function Get-ProviderLinkCatalog {
         }
         codex = [ordered]@{
             Id    = 'codex'
-            Label = 'Codex'
+            Label = 'CodeX'
             Usage = [ordered]@{ Kind = 'Usage'; Label = 'ChatGPT Codex'; Url = 'https://chatgpt.com/codex' }
             Docs  = [ordered]@{ Kind = 'Docs';  Label = 'Install Codex CLI'; Url = 'https://developers.openai.com/codex/cli' }
         }
@@ -25,7 +25,7 @@ function Get-ProviderLinkCatalog {
         }
         grok = [ordered]@{
             Id    = 'grok'
-            Label = 'Grok'
+            Label = 'Grok Bot'
             Usage = [ordered]@{ Kind = 'Usage'; Label = 'Console / billing'; Url = 'https://console.x.ai' }
             Docs  = [ordered]@{ Kind = 'Docs';  Label = 'Install Grok CLI'; Url = 'https://x.ai/docs/build/overview' }
         }

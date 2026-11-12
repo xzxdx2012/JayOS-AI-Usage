@@ -7,7 +7,7 @@
 # status words they already hold. Needs Test-ProviderAuthFailed (Config.ps1).
 
 # Section order on screen; also breaks ties so the header names the topmost one.
-$script:StatusProviderOrder = @('claude', 'codex', 'cursor', 'grok')
+$script:StatusProviderOrder = @('claude', 'codex', 'cursor')
 
 # Only these replace the last-fetch time in the header. Everything else
 # (init, refreshing, unavailable) says nothing the user can act on.

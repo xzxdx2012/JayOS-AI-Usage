@@ -2,7 +2,9 @@
 
 # UnifiedState.ps1 - settings persistence, window positioning, and clipboard export
 
-$script:UnifiedSectionKeys = @('claude', 'codex', 'cursor', 'grok')
+# Keep the retired Grok key only for migration so an old visible section is
+# actively switched off when existing state is loaded.
+$script:UnifiedSectionKeys = @('deepseek', 'claude', 'codex', 'cursor', 'grok')
 
 if (-not $script:Cfg) { $script:Cfg = @{} }
 $script:UnifiedStateNeedsRepair = $false
@@ -18,7 +20,7 @@ $script:UnifiedCfgDefaults = @{
     ShowAlerts  = $true
     ShowGraph   = $false
     ShowRemaining = $true
-    DeveloperFeatures = $false     # experimental Cursor / Grok integration is opt-in
+    DeveloperFeatures = $true      # compatibility flag retained for older profiles
     AlertState = @{}
     ViewMode = 'Pinned'              # 'Pinned' | 'Quake'
     DropdownHotkey = 'Shift+F11'
@@ -71,19 +73,22 @@ function Initialize-UnifiedCfg {
         }
     }
     $script:Cfg['Sections'] = ConvertTo-UnifiedSectionsMap $script:Cfg['Sections']
+    # Keep the retired developer-preview switch inert for older profiles.
+    $script:Cfg['DeveloperFeatures'] = $true
 }
 
 function Test-DeveloperFeaturesEnabled {
-    return ($script:Cfg -and $script:Cfg['DeveloperFeatures'] -is [bool] -and $script:Cfg['DeveloperFeatures'])
-}
-
-function Test-ProviderAvailable([string]$Key) {
-    if ($Key -in @('cursor', 'grok')) { return [bool](Test-DeveloperFeaturesEnabled) }
     return $true
 }
 
+function Test-ProviderAvailable([string]$Key) {
+    # Grok Bot desktop integration is retired.  The code remains readable for
+    # old state/export compatibility, but JayOS no longer offers or polls it.
+    return ([string]$Key -ne 'grok')
+}
+
 function Get-AvailableProviderKeys {
-    return ,@(@('claude', 'codex', 'cursor', 'grok') | Where-Object { Test-ProviderAvailable $_ })
+    return ,@(@('deepseek', 'claude', 'codex', 'cursor') | Where-Object { Test-ProviderAvailable $_ })
 }
 
 function New-DefaultUnifiedConfiguration {
@@ -173,7 +178,7 @@ function Load-UnifiedState {
         if (-not (Test-Path -LiteralPath $script:StatePath) -and -not (Test-Path -LiteralPath ($script:StatePath + '.bak'))) { return }
 
         $s = Read-StateJson $script:StatePath
-        foreach ($key in @('Left', 'Top', 'Opacity', 'StartHidden', 'ShowStats', 'Compact', 'Theme', 'ShowAlerts', 'ShowGraph', 'ViewMode', 'DropdownHotkey', 'ToggleOverlayHotkey', 'RefreshHotkey', 'DropdownMonitor', 'DropdownOpacity', 'DropdownHideOnFocusLoss', 'NotchPinButton', 'NotchPinned', 'Language', 'PanelBg', 'PanelBgRecent', 'CodexCreditPeak', 'CodexCreditLast', 'CodexCreditEpoch', 'ShowRemaining', 'DeveloperFeatures', 'AiRequests', 'AiRequestRemind', 'AiNotifyDone', 'AiNotifyAttention')) {
+        foreach ($key in @('Left', 'Top', 'Opacity', 'StartHidden', 'ShowStats', 'Compact', 'Theme', 'ShowAlerts', 'ShowGraph', 'ViewMode', 'DropdownHotkey', 'ToggleOverlayHotkey', 'RefreshHotkey', 'DropdownMonitor', 'DropdownOpacity', 'DropdownHideOnFocusLoss', 'NotchPinButton', 'NotchPinned', 'Language', 'PanelBg', 'PanelBgRecent', 'CodexCreditPeak', 'CodexCreditLast', 'CodexCreditEpoch', 'ShowRemaining', 'DeveloperFeatures', 'AiRequests', 'AiRequestRemind', 'AiNotifyDone', 'AiNotifyAttention', 'MusicLyrics', 'PageMusic', 'PageShelf', 'AnimSpeed', 'JellyAmount', 'ClipHistory', 'NotchMusic', 'NotchLyrics', 'LastCard')) {
             $prop = $s.PSObject.Properties[$key]
             if ($prop -and $null -ne $prop.Value) { $script:Cfg[$key] = $prop.Value }
         }
@@ -228,9 +233,16 @@ function Apply-UnifiedSettings {
     if ($script:window) {
         $script:window.Opacity = [double]$script:Cfg.Opacity
 
-        $statsPanel = $script:window.FindName('statsPanel')
-        if ($statsPanel) {
-            $statsPanel.Visibility = if ($script:Cfg.ShowStats) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+        # One switch for every card's right-hand stats column (it used to reach
+        # only Claude and DeepSeek, so Codex/Cursor looked different).
+        $statsVis = if ($script:Cfg.ShowStats) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+        foreach ($n in @('statsPanel', 'codexStatsPanel', 'cursorStatsPanel', 'deepseekStatsPanel')) {
+            $sp = $script:window.FindName($n)
+            if ($sp) { $sp.Visibility = $statsVis }
+        }
+        # The bars fill what the stats column leaves; re-fit them when it toggles.
+        if ($script:NotchParts -and $script:NotchParts.Content -and (Get-Command Set-NotchContentWidth -ErrorAction SilentlyContinue)) {
+            try { Set-NotchContentWidth ([double]$script:NotchParts.Content.Width) } catch { }
         }
 
         if (-not $script:SparkRowNames) {
@@ -256,6 +268,8 @@ function Apply-UnifiedSettings {
     }
 
     Apply-UnifiedTheme $script:Cfg.Theme
+    if (Get-Command Update-DeepSeekPanel -ErrorAction SilentlyContinue) { Update-DeepSeekPanel }
+    if (Get-Command Update-IslandValues -ErrorAction SilentlyContinue) { Update-IslandValues }
 }
 
 function Test-FiniteNumber($value) {

@@ -1,6 +1,6 @@
 # Native Windows build. Only version-controlled application files enter payload.zip.
 param(
-    [string]$Version = '0.0.3-beta',
+    [string]$Version = '0.0.4-beta',
     [string]$GoExe = 'go',
     [string]$RsrcExe = 'rsrc',
     [string]$OutputDirectory = $PSScriptRoot
@@ -20,6 +20,11 @@ foreach ($dir in @('src','icons','assets','hooks')) {
 }
 # Require the permission hook: earlier build.sh accidentally omitted hooks/.
 if (-not (Test-Path (Join-Path $app 'hooks\ClaudeHook.ps1'))) { throw 'Missing permission hook' }
+# The music helper reads Windows media sessions through this WinRT projection
+# (Microsoft.Windows.SDK.NET + WinRT.Runtime, Microsoft-signed).
+[void](New-Item -ItemType Directory -Force (Join-Path $app 'lib'))
+Copy-Item -LiteralPath (Join-Path $root 'lib\winrt') -Destination (Join-Path $app 'lib') -Recurse
+if (-not (Test-Path (Join-Path $app 'lib\winrt\Microsoft.Windows.SDK.NET.dll'))) { throw 'Missing WinRT projection' }
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $payload = Join-Path $PSScriptRoot 'payload.zip'
 if (Test-Path -LiteralPath $payload) { Remove-Item -LiteralPath $payload }

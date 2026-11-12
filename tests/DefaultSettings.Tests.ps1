@@ -31,7 +31,7 @@ try {
     Assert ((Test-Path -LiteralPath $backup) -and [IO.File]::ReadAllText($backup) -eq $before) 'reset backs up the complete previous settings first'
     Assert ($script:Cfg.Theme -eq 'Graphite' -and $script:Cfg.PanelBg -eq '#1A1A1E') 'appearance returns to factory defaults'
     Assert ($script:Cfg.Language -eq 'en' -and $script:Cfg.Opacity -eq 1.0) 'default language and opacity restored'
-    Assert (-not (Test-DeveloperFeaturesEnabled)) 'experimental providers are opt-in again after reset'
+    Assert (Test-DeveloperFeaturesEnabled) 'developer features stay on after reset (opt-in gate retired)'
     Assert ($script:Cfg.ShowRemaining) 'remaining display returns to default'
     Assert ($script:Cfg.ViewMode -eq 'Pinned' -and $null -eq $script:Cfg.Left -and $null -eq $script:Cfg.Top) 'view and saved position reset'
     Assert ($script:Cfg.ToggleOverlayHotkey -eq '' -and $script:Cfg.RefreshHotkey -eq '') 'custom global hotkeys return to unbound'
@@ -44,7 +44,7 @@ try {
         Assert ([IO.File]::ReadAllText((Join-Path $fixture $name)) -eq 'fixture-only-do-not-modify') "reset preserves $name"
     }
     $saved=Read-StateJson $script:StatePath
-    Assert ($saved.Theme -eq 'Graphite' -and -not $saved.DeveloperFeatures) 'defaults are persisted atomically'
+    Assert ($saved.Theme -eq 'Graphite' -and $saved.DeveloperFeatures) 'defaults are persisted atomically'
     $script:Cfg.AlertState['changed']=$true
     Assert ($script:UnifiedCfgDefaults.AlertState.Count -eq 0) 'reset does not share mutable default maps'
 
