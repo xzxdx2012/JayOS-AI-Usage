@@ -48,7 +48,7 @@ $Languages = [ordered]@{ en = 'English'; zh = '中文'; fr = 'Français'; ja = '
 $T = @{
     en = @{
         WelcomeTitle = 'Welcome'
-        WelcomeBody  = 'This will install JayOS AI Usage — a notch at the top of your screen that shows how much of your Claude, Codex, Cursor and Grok limits you have used.'
+        WelcomeBody  = 'This will install JayOS AI Usage — a notch at the top of your screen that shows your DeepSeek Harness balance and how much of your Claude, Codex and Cursor limits you have used.'
         Language     = 'Language'
         OptionsTitle = 'Install options'
         Location     = 'Install location'
@@ -76,7 +76,7 @@ $T = @{
     }
     zh = @{
         WelcomeTitle = '欢迎'
-        WelcomeBody  = '将安装 JayOS AI Usage —— 屏幕顶部的一个“刘海”，显示你的 Claude、Codex、Cursor 和 Grok 额度已经用了多少。'
+        WelcomeBody  = '将安装 JayOS AI Usage —— 屏幕顶部的一个“刘海”，显示你的 DeepSeek Harness 余额，以及 Claude、Codex、Cursor 额度已经用了多少。'
         Language     = '语言'
         OptionsTitle = '安装选项'
         Location     = '安装位置'
@@ -104,7 +104,7 @@ $T = @{
     }
     fr = @{
         WelcomeTitle = 'Bienvenue'
-        WelcomeBody  = "Vous allez installer JayOS AI Usage : une encoche en haut de l'écran qui indique la part de vos limites Claude, Codex, Cursor et Grok déjà utilisée."
+        WelcomeBody  = "Vous allez installer JayOS AI Usage : une encoche en haut de l'écran qui indique votre solde DeepSeek Harness et la part de vos limites Claude, Codex et Cursor déjà utilisée."
         Language     = 'Langue'
         OptionsTitle = "Options d'installation"
         Location     = "Dossier d'installation"
@@ -132,7 +132,7 @@ $T = @{
     }
     ja = @{
         WelcomeTitle = 'ようこそ'
-        WelcomeBody  = 'JayOS AI Usage をインストールします。画面上部のノッチに、Claude・Codex・Cursor・Grok の使用量が表示されます。'
+        WelcomeBody  = 'JayOS AI Usage をインストールします。画面上部のノッチに、DeepSeek Harness の残高と Claude・Codex・Cursor の使用量が表示されます。'
         Language     = '言語'
         OptionsTitle = 'インストールオプション'
         Location     = 'インストール先'
@@ -160,7 +160,7 @@ $T = @{
     }
     ko = @{
         WelcomeTitle = '환영합니다'
-        WelcomeBody  = 'JayOS AI Usage를 설치합니다. 화면 상단의 노치에 Claude, Codex, Cursor, Grok 한도를 얼마나 사용했는지 표시됩니다.'
+        WelcomeBody  = 'JayOS AI Usage를 설치합니다. 화면 상단의 노치에 DeepSeek Harness 잔액과 Claude, Codex, Cursor 한도를 얼마나 사용했는지 표시됩니다.'
         Language     = '언어'
         OptionsTitle = '설치 옵션'
         Location     = '설치 위치'

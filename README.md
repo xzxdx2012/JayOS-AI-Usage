@@ -2,6 +2,8 @@
 
 A Windows notch-style overlay for AI usage and permission requests. It lives at the top of the screen, shows account limits, and lets you respond to supported terminal requests without switching windows.
 
+Supported: **DeepSeek Harness** (remaining balance), **Claude Code**, **Codex** and **Cursor** (experimental).
+
 **Version: 0.0.4 Beta** · Maintained by **xzxdx2012**.
 
 ## Install
